@@ -3,7 +3,7 @@
 - MySQL, Gradle
 
 ## 패키지 구조
-com.futureschola.courseregistration
+com.futureschole.courseregistration
 ├── controller/
 ├── service/
 ├── repository/
