@@ -9,4 +9,5 @@ com.futureschole.courseregistration
 ├── repository/
 ├── domain/
 ├── dto/          # record 클래스로 작성
-└── exception/
+├── exception/
+└── config/
