@@ -8,6 +8,8 @@ import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
+import com.futureschole.courseregistration.dto.EnrollmentListItemResponse;
+import com.futureschole.courseregistration.dto.EnrollmentListResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
@@ -91,6 +93,14 @@ public class EnrollmentService {
 
         enrollment.cancel(LocalDateTime.now());
         return EnrollmentCancelResponse.from(enrollment);
+    }
+
+    @Transactional(readOnly = true)
+    public EnrollmentListResponse findMyEnrollments(Long userId, EnrollmentStatus statusFilter) {
+        List<EnrollmentListItemResponse> content = (statusFilter == null)
+                ? enrollmentRepository.findMyEnrollments(userId)
+                : enrollmentRepository.findMyEnrollmentsByStatus(userId, statusFilter);
+        return new EnrollmentListResponse(content);
     }
 
     private Enrollment reserveSeatAndSave(User user, Class clazz) {
