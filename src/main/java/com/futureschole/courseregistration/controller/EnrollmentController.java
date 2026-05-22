@@ -1,5 +1,6 @@
 package com.futureschole.courseregistration.controller;
 
+import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
@@ -37,6 +38,15 @@ public class EnrollmentController {
             @PathVariable Long enrollmentId
     ) {
         PaymentConfirmResponse response = enrollmentService.confirmPayment(userId, enrollmentId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{enrollmentId}/cancel")
+    public ResponseEntity<EnrollmentCancelResponse> cancel(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long enrollmentId
+    ) {
+        EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
         return ResponseEntity.ok(response);
     }
 }

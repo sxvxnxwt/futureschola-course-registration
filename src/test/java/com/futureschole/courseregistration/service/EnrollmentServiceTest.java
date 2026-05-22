@@ -6,6 +6,7 @@ import com.futureschole.courseregistration.domain.entity.User;
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
 import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
+import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
@@ -25,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -366,6 +368,119 @@ class EnrollmentServiceTest {
                     .isInstanceOf(CustomException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.ENROLLMENT_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("수강 취소")
+    class Cancel {
+
+        @Test
+        @DisplayName("PENDING 상태의 본인 enrollment를 취소하면 CANCELLED로 전이되고 cancelledAt이 기록된다")
+        void cancel_fromPending_success() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when
+            EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
+
+            // then
+            assertThat(response.id()).isEqualTo(enrollmentId);
+            assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(response.cancelledAt()).isNotNull();
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(enrollment.getCancelledAt()).isNotNull();
+            assertThat(enrollment.getConfirmedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("CONFIRMED 상태의 본인 enrollment를 취소하면 CANCELLED로 전이되며 confirmedAt은 보존된다")
+        void cancel_fromConfirmed_success() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+            LocalDateTime confirmedAt = LocalDateTime.of(2026, 5, 1, 10, 0);
+            setEnrollmentField(enrollment, "confirmedAt", confirmedAt);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when
+            EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
+
+            // then
+            assertThat(response.id()).isEqualTo(enrollmentId);
+            assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(response.cancelledAt()).isNotNull();
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(enrollment.getCancelledAt()).isNotNull();
+            assertThat(enrollment.getConfirmedAt()).isEqualTo(confirmedAt);
+        }
+
+        @Test
+        @DisplayName("이미 CANCELLED 상태인 enrollment를 다시 취소하면 INVALID_STATUS_TRANSITION 예외가 발생한다")
+        void cancel_alreadyCancelled_returnsInvalidStatusTransition() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.cancel(userId, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 enrollmentId로 취소 시도하면 ENROLLMENT_NOT_FOUND 예외가 발생한다")
+        void cancel_notFound_returnsEnrollmentNotFound() {
+            // given
+            Long enrollmentId = 999L;
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.cancel(200L, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.ENROLLMENT_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("다른 사용자의 enrollment에 취소 시도하면 FORBIDDEN 예외가 발생한다")
+        void cancel_otherUser_returnsForbidden() {
+            // given
+            Long ownerId = 200L;
+            Long requesterId = 201L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User owner = buildUserRef(ownerId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, owner, clazz, EnrollmentStatus.PENDING);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.cancel(requesterId, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.FORBIDDEN);
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
+            assertThat(enrollment.getCancelledAt()).isNull();
         }
     }
 }

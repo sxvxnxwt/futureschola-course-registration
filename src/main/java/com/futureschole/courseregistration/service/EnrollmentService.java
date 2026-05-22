@@ -5,6 +5,7 @@ import com.futureschole.courseregistration.domain.entity.Enrollment;
 import com.futureschole.courseregistration.domain.entity.User;
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
 import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
+import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
@@ -72,6 +73,24 @@ public class EnrollmentService {
 
         enrollment.confirm(LocalDateTime.now());
         return PaymentConfirmResponse.from(enrollment);
+    }
+
+    @Transactional
+    public EnrollmentCancelResponse cancel(Long userId, Long enrollmentId) {
+        // TODO: 결제 확정과의 동시성 처리 — 추후 비관적 락 or 조건부 UPDATE
+        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+                .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
+
+        if (!enrollment.getUser().getId().equals(userId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+
+        if (enrollment.getStatus() == EnrollmentStatus.CANCELLED) {
+            throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        enrollment.cancel(LocalDateTime.now());
+        return EnrollmentCancelResponse.from(enrollment);
     }
 
     private Enrollment reserveSeatAndSave(User user, Class clazz) {
