@@ -1,6 +1,9 @@
 package com.futureschole.courseregistration.domain.entity;
 
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
+import com.futureschole.courseregistration.domain.enums.UserRole;
+import com.futureschole.courseregistration.exception.CustomException;
+import com.futureschole.courseregistration.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -11,6 +14,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -41,6 +45,10 @@ public class Class {
     @Column(nullable = false)
     private String title;
 
+    @Lob
+    @Column
+    private String description;
+
     @Column(nullable = false)
     private Integer price;
 
@@ -66,4 +74,40 @@ public class Class {
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
+
+    public static Class create(
+            User creator,
+            String title,
+            String description,
+            Integer price,
+            Integer capacity,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        validate(creator, capacity, startDate, endDate);
+
+        Class clazz = new Class();
+        clazz.creator = creator;
+        clazz.title = title;
+        clazz.description = description;
+        clazz.price = price;
+        clazz.capacity = capacity;
+        clazz.startDate = startDate;
+        clazz.endDate = endDate;
+        clazz.status = ClassStatus.DRAFT;
+        clazz.enrollmentCount = 0;
+        return clazz;
+    }
+
+    private static void validate(User creator, Integer capacity, LocalDate startDate, LocalDate endDate) {
+        if (creator == null || creator.getRole() != UserRole.CREATOR) {
+            throw new CustomException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (capacity == null || capacity <= 0) {
+            throw new CustomException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+            throw new CustomException(ErrorCode.VALIDATION_FAILED);
+        }
+    }
 }
