@@ -2,17 +2,26 @@ package com.futureschole.courseregistration.service;
 
 import com.futureschole.courseregistration.domain.entity.Class;
 import com.futureschole.courseregistration.domain.entity.User;
+import com.futureschole.courseregistration.domain.enums.ClassListStatusFilter;
+import com.futureschole.courseregistration.domain.enums.ClassStatus;
+import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
+import com.futureschole.courseregistration.dto.ClassDetailResponse;
+import com.futureschole.courseregistration.dto.ClassListItemResponse;
+import com.futureschole.courseregistration.dto.ClassListResponse;
 import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
 import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
+import com.futureschole.courseregistration.repository.EnrollmentRepository;
 import com.futureschole.courseregistration.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +29,7 @@ public class ClassService {
 
     private final ClassRepository classRepository;
     private final UserRepository userRepository;
+    private final EnrollmentRepository enrollmentRepository;
 
     @Transactional
     public ClassCreateResponse createClass(Long userId, ClassCreateRequest request) {
@@ -51,5 +61,37 @@ public class ClassService {
 
         clazz.changeStatus(request.status());
         return ClassStatusChangeResponse.from(clazz);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassListResponse getClasses(ClassListStatusFilter statusFilter) {
+        List<ClassStatus> statuses = (statusFilter == null)
+                ? List.of(ClassStatus.OPEN, ClassStatus.CLOSED)
+                : List.of(statusFilter.toClassStatus());
+
+        List<ClassListItemResponse> content = classRepository
+                .findAllByStatusInOrderByIdDesc(statuses)
+                .stream()
+                .map(ClassListItemResponse::from)
+                .toList();
+
+        return new ClassListResponse(content);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassDetailResponse getClassDetail(Long classId) {
+        Class clazz = classRepository.findById(classId)
+                .orElseThrow(() -> new CustomException(ErrorCode.CLASS_NOT_FOUND));
+
+        if (clazz.getStatus() == ClassStatus.DRAFT) {
+            throw new CustomException(ErrorCode.CLASS_NOT_FOUND);
+        }
+
+        long enrolledCount = enrollmentRepository.countByClazz_IdAndStatusIn(
+                classId,
+                List.of(EnrollmentStatus.PENDING, EnrollmentStatus.CONFIRMED)
+        );
+
+        return ClassDetailResponse.of(clazz, enrolledCount);
     }
 }
