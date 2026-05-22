@@ -62,4 +62,12 @@ public class Enrollment {
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
+
+    public static Enrollment create(User user, Class clazz) {
+        Enrollment enrollment = new Enrollment();
+        enrollment.user = user;
+        enrollment.clazz = clazz;
+        enrollment.status = EnrollmentStatus.PENDING;
+        return enrollment;
+    }
 }
