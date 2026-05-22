@@ -75,4 +75,9 @@ public class Enrollment {
         this.status = EnrollmentStatus.CONFIRMED;
         this.confirmedAt = now;
     }
+
+    public void cancel(LocalDateTime now) {
+        this.status = EnrollmentStatus.CANCELLED;
+        this.cancelledAt = now;
+    }
 }
