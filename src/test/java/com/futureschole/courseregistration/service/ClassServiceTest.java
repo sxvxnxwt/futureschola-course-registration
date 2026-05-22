@@ -6,6 +6,8 @@ import com.futureschole.courseregistration.domain.enums.ClassStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
 import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
+import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
+import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
@@ -18,6 +20,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.time.LocalDate;
 import java.util.Optional;
 
@@ -162,5 +165,127 @@ class ClassServiceTest {
                 .isEqualTo(ErrorCode.VALIDATION_FAILED);
 
         verify(classRepository, never()).save(any(Class.class));
+    }
+
+    private Class buildClassFixture(Long ownerId, ClassStatus status) {
+        User owner = mock(User.class);
+        given(owner.getId()).willReturn(ownerId);
+        given(owner.getRole()).willReturn(UserRole.CREATOR);
+
+        Class clazz = Class.create(
+                owner,
+                "웹 프로그래밍",
+                "웹 프로그래밍 기초",
+                50_000,
+                30,
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 7, 31)
+        );
+        setStatus(clazz, status);
+        return clazz;
+    }
+
+    private void setStatus(Class clazz, ClassStatus status) {
+        try {
+            Field field = Class.class.getDeclaredField("status");
+            field.setAccessible(true);
+            field.set(clazz, status);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("DRAFT 상태의 본인 강의를 OPEN으로 변경할 수 있다")
+    void changeStatus_draftToOpen_success() {
+        // given
+        Long userId = 1L;
+        Long classId = 10L;
+        Class clazz = buildClassFixture(userId, ClassStatus.DRAFT);
+        given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+
+        ClassStatusChangeRequest request = new ClassStatusChangeRequest(ClassStatus.OPEN);
+
+        // when
+        ClassStatusChangeResponse response = classService.changeStatus(userId, classId, request);
+
+        // then
+        assertThat(response.status()).isEqualTo(ClassStatus.OPEN);
+        assertThat(clazz.getStatus()).isEqualTo(ClassStatus.OPEN);
+    }
+
+    @Test
+    @DisplayName("강의가 존재하지 않으면 CLASS_NOT_FOUND 예외가 발생한다")
+    void changeStatus_classNotFound() {
+        // given
+        given(classRepository.findById(99L)).willReturn(Optional.empty());
+        ClassStatusChangeRequest request = new ClassStatusChangeRequest(ClassStatus.OPEN);
+
+        // when & then
+        assertThatThrownBy(() -> classService.changeStatus(1L, 99L, request))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.CLASS_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("본인 소유가 아닌 강의의 상태를 바꾸려 하면 CLASS_ACCESS_DENIED 예외가 발생한다")
+    void changeStatus_notOwner() {
+        // given
+        Long ownerId = 1L;
+        Long otherUserId = 2L;
+        Long classId = 10L;
+        Class clazz = buildClassFixture(ownerId, ClassStatus.DRAFT);
+        given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+
+        ClassStatusChangeRequest request = new ClassStatusChangeRequest(ClassStatus.OPEN);
+
+        // when & then
+        assertThatThrownBy(() -> classService.changeStatus(otherUserId, classId, request))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.CLASS_ACCESS_DENIED);
+
+        assertThat(clazz.getStatus()).isEqualTo(ClassStatus.DRAFT);
+    }
+
+    @Test
+    @DisplayName("CLOSED 상태에서 OPEN으로 전이하면 INVALID_STATUS_TRANSITION 예외가 발생한다")
+    void changeStatus_closedToOpen_invalid() {
+        // given
+        Long userId = 1L;
+        Long classId = 10L;
+        Class clazz = buildClassFixture(userId, ClassStatus.CLOSED);
+        given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+
+        ClassStatusChangeRequest request = new ClassStatusChangeRequest(ClassStatus.OPEN);
+
+        // when & then
+        assertThatThrownBy(() -> classService.changeStatus(userId, classId, request))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        assertThat(clazz.getStatus()).isEqualTo(ClassStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("DRAFT 상태에서 CLOSED로 바로 전이하면 INVALID_STATUS_TRANSITION 예외가 발생한다")
+    void changeStatus_draftToClosed_invalid() {
+        // given
+        Long userId = 1L;
+        Long classId = 10L;
+        Class clazz = buildClassFixture(userId, ClassStatus.DRAFT);
+        given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+
+        ClassStatusChangeRequest request = new ClassStatusChangeRequest(ClassStatus.CLOSED);
+
+        // when & then
+        assertThatThrownBy(() -> classService.changeStatus(userId, classId, request))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        assertThat(clazz.getStatus()).isEqualTo(ClassStatus.DRAFT);
     }
 }
