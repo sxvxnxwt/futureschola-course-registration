@@ -8,6 +8,7 @@ import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
+import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
@@ -86,6 +87,23 @@ class EnrollmentServiceTest {
             Field field = Class.class.getDeclaredField(name);
             field.setAccessible(true);
             field.set(clazz, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static Enrollment buildEnrollment(Long id, User user, Class clazz, EnrollmentStatus status) {
+        Enrollment enrollment = Enrollment.create(user, clazz);
+        setEnrollmentField(enrollment, "id", id);
+        setEnrollmentField(enrollment, "status", status);
+        return enrollment;
+    }
+
+    private static void setEnrollmentField(Enrollment enrollment, String name, Object value) {
+        try {
+            Field field = Enrollment.class.getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(enrollment, value);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
@@ -244,6 +262,110 @@ class EnrollmentServiceTest {
 
             verify(enrollmentRepository, never()).save(any(Enrollment.class));
             verify(enrollmentRepository, never()).countByClazz_IdAndStatusIn(anyLong(), anyCollection());
+        }
+    }
+
+    @Nested
+    @DisplayName("결제 확정")
+    class PaymentConfirm {
+
+        @Test
+        @DisplayName("PENDING 상태의 본인 enrollment를 결제 확정하면 CONFIRMED로 전이되고 confirmedAt이 기록된다")
+        void confirmPayment_success() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when
+            PaymentConfirmResponse response = enrollmentService.confirmPayment(userId, enrollmentId);
+
+            // then
+            assertThat(response.id()).isEqualTo(enrollmentId);
+            assertThat(response.status()).isEqualTo(EnrollmentStatus.CONFIRMED);
+            assertThat(response.confirmedAt()).isNotNull();
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
+            assertThat(enrollment.getConfirmedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("다른 사용자의 enrollment에 결제 시도하면 FORBIDDEN 예외가 발생한다")
+        void confirmPayment_otherUser_returnsForbidden() {
+            // given
+            Long ownerId = 200L;
+            Long requesterId = 201L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User owner = buildUserRef(ownerId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, owner, clazz, EnrollmentStatus.PENDING);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.confirmPayment(requesterId, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.FORBIDDEN);
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
+            assertThat(enrollment.getConfirmedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("이미 CONFIRMED 상태인 enrollment에 결제 시도하면 INVALID_STATUS_TRANSITION 예외가 발생한다")
+        void confirmPayment_alreadyConfirmed_returnsInvalidStatusTransition() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.confirmPayment(userId, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        @Test
+        @DisplayName("CANCELLED 상태인 enrollment에 결제 시도하면 INVALID_STATUS_TRANSITION 예외가 발생한다")
+        void confirmPayment_cancelled_returnsInvalidStatusTransition() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.confirmPayment(userId, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 enrollmentId로 결제 시도하면 ENROLLMENT_NOT_FOUND 예외가 발생한다")
+        void confirmPayment_notFound_returnsEnrollmentNotFound() {
+            // given
+            Long enrollmentId = 999L;
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.confirmPayment(200L, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.ENROLLMENT_NOT_FOUND);
         }
     }
 }
