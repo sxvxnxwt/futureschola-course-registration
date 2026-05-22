@@ -4,6 +4,8 @@ import com.futureschole.courseregistration.domain.entity.Class;
 import com.futureschole.courseregistration.domain.entity.User;
 import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
+import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
+import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
@@ -36,5 +38,18 @@ public class ClassService {
 
         Class saved = classRepository.save(clazz);
         return ClassCreateResponse.from(saved);
+    }
+
+    @Transactional
+    public ClassStatusChangeResponse changeStatus(Long userId, Long classId, ClassStatusChangeRequest request) {
+        Class clazz = classRepository.findById(classId)
+                .orElseThrow(() -> new CustomException(ErrorCode.CLASS_NOT_FOUND));
+
+        if (!clazz.isOwnedBy(userId)) {
+            throw new CustomException(ErrorCode.CLASS_ACCESS_DENIED);
+        }
+
+        clazz.changeStatus(request.status());
+        return ClassStatusChangeResponse.from(clazz);
     }
 }
