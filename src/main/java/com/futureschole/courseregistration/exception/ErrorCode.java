@@ -17,6 +17,9 @@ public enum ErrorCode {
     ENROLLMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "ENROLLMENT_NOT_FOUND", "수강 신청 내역을 찾을 수 없습니다."),
 
     INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "허용되지 않은 상태 전이입니다."),
+    CLASS_NOT_OPEN(HttpStatus.CONFLICT, "CLASS_NOT_OPEN", "신청할 수 없는 상태의 강의입니다."),
+    CLASS_FULL(HttpStatus.CONFLICT, "CLASS_FULL", "정원이 가득 차 신청할 수 없습니다."),
+    ALREADY_ENROLLED(HttpStatus.CONFLICT, "ALREADY_ENROLLED", "이미 신청한 강의입니다."),
 
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR", "서버 내부 오류가 발생했습니다.");
 
