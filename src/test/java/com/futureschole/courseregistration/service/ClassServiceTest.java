@@ -2,12 +2,10 @@ package com.futureschole.courseregistration.service;
 
 import com.futureschole.courseregistration.domain.entity.Class;
 import com.futureschole.courseregistration.domain.entity.User;
+import com.futureschole.courseregistration.domain.enums.ClassListStatusFilter;
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
-import com.futureschole.courseregistration.dto.ClassCreateRequest;
-import com.futureschole.courseregistration.dto.ClassCreateResponse;
-import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
-import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
+import com.futureschole.courseregistration.dto.*;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
@@ -17,17 +15,22 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -298,6 +301,82 @@ class ClassServiceTest {
                     .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
 
             assertThat(clazz.getStatus()).isEqualTo(ClassStatus.DRAFT);
+        }
+    }
+
+    @Nested
+    @DisplayName("강의 목록 조회")
+    class GetClasses {
+
+        @Test
+        @DisplayName("status=OPEN 필터링 시 OPEN 강의만 조회된다")
+        void getClasses_filterOpen() {
+            // given
+            Class openClass = buildClassFixture(1L, ClassStatus.OPEN);
+            given(classRepository.findAllByStatusInOrderByIdDesc(List.of(ClassStatus.OPEN)))
+                    .willReturn(List.of(openClass));
+
+            // when
+            ClassListResponse response = classService.getClasses(ClassListStatusFilter.OPEN);
+
+            // then
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0).status()).isEqualTo(ClassStatus.OPEN);
+        }
+
+        @Test
+        @DisplayName("status=CLOSED 필터링 시 CLOSED 강의만 조회된다")
+        void getClasses_filterClosed() {
+            // given
+            Class closedClass = buildClassFixture(1L, ClassStatus.CLOSED);
+            given(classRepository.findAllByStatusInOrderByIdDesc(List.of(ClassStatus.CLOSED)))
+                    .willReturn(List.of(closedClass));
+
+            // when
+            ClassListResponse response = classService.getClasses(ClassListStatusFilter.CLOSED);
+
+            // then
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0).status()).isEqualTo(ClassStatus.CLOSED);
+        }
+
+        @Test
+        @DisplayName("status 미지정 시 OPEN+CLOSED 강의가 조회되고 DRAFT는 제외된다")
+        void getClasses_defaultFilter() {
+            // given
+            Class openClass = buildClassFixture(1L, ClassStatus.OPEN);
+            Class closedClass = buildClassFixture(2L, ClassStatus.CLOSED);
+            given(classRepository.findAllByStatusInOrderByIdDesc(anyCollection()))
+                    .willReturn(List.of(openClass, closedClass));
+
+            // when
+            ClassListResponse response = classService.getClasses(null);
+
+            // then
+            ArgumentCaptor<Collection<ClassStatus>> captor = ArgumentCaptor.forClass(Collection.class);
+            verify(classRepository).findAllByStatusInOrderByIdDesc(captor.capture());
+            assertThat(captor.getValue())
+                    .containsExactlyInAnyOrder(ClassStatus.OPEN, ClassStatus.CLOSED)
+                    .doesNotContain(ClassStatus.DRAFT);
+
+            assertThat(response.content()).hasSize(2);
+            assertThat(response.content())
+                    .extracting("status")
+                    .containsExactlyInAnyOrder(ClassStatus.OPEN, ClassStatus.CLOSED);
+        }
+
+        @Test
+        @DisplayName("결과가 없으면 빈 배열을 반환한다")
+        void getClasses_emptyResult() {
+            // given
+            given(classRepository.findAllByStatusInOrderByIdDesc(anyCollection()))
+                    .willReturn(Collections.emptyList());
+
+            // when
+            ClassListResponse response = classService.getClasses(ClassListStatusFilter.OPEN);
+
+            // then
+            assertThat(response.content()).isEmpty();
         }
     }
 }
