@@ -3,6 +3,7 @@ package com.futureschole.courseregistration.controller;
 import com.futureschole.courseregistration.domain.enums.ClassListStatusFilter;
 import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
+import com.futureschole.courseregistration.dto.ClassDetailResponse;
 import com.futureschole.courseregistration.dto.ClassListResponse;
 import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
 import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
@@ -51,5 +52,12 @@ public class ClassController {
             @RequestParam(required = false) ClassListStatusFilter status
     ) {
         return ResponseEntity.ok(classService.getClasses(status));
+    }
+
+    @GetMapping("/{classId}")
+    public ResponseEntity<ClassDetailResponse> getClassDetail(
+            @PathVariable Long classId
+    ) {
+        return ResponseEntity.ok(classService.getClassDetail(classId));
     }
 }
