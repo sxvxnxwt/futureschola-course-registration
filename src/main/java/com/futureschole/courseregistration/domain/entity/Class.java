@@ -56,9 +56,6 @@ public class Class {
     private Integer capacity;
 
     @Column(nullable = false)
-    private Integer enrollmentCount = 0;
-
-    @Column(nullable = false)
     private LocalDate startDate;
 
     @Column(nullable = false)
@@ -95,7 +92,6 @@ public class Class {
         clazz.startDate = startDate;
         clazz.endDate = endDate;
         clazz.status = ClassStatus.DRAFT;
-        clazz.enrollmentCount = 0;
         return clazz;
     }
 
