@@ -9,6 +9,8 @@ import com.futureschole.courseregistration.domain.enums.UserRole;
 import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
+import com.futureschole.courseregistration.dto.EnrollmentListItemResponse;
+import com.futureschole.courseregistration.dto.EnrollmentListResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
@@ -481,6 +483,78 @@ class EnrollmentServiceTest {
 
             assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
             assertThat(enrollment.getCancelledAt()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("내 수강 신청 목록 조회")
+    class FindMyEnrollments {
+
+        @Test
+        @DisplayName("status 필터가 없으면 본인의 모든 상태 신청 내역을 createdAt DESC로 반환한다")
+        void findMyEnrollments_withoutStatusFilter_returnsAll() {
+            // given
+            Long userId = 200L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            List<EnrollmentListItemResponse> repoResult = List.of(
+                    new EnrollmentListItemResponse(
+                            502L, 2L, "데이터베이스 기초",
+                            EnrollmentStatus.CANCELLED, now.minusHours(1), null
+                    ),
+                    new EnrollmentListItemResponse(
+                            501L, 1L, "웹 프로그래밍 입문",
+                            EnrollmentStatus.CONFIRMED, now.minusHours(2), now.minusMinutes(30)
+                    ),
+                    new EnrollmentListItemResponse(
+                            500L, 3L, "알고리즘 입문",
+                            EnrollmentStatus.PENDING, now.minusHours(3), null
+                    )
+            );
+            given(enrollmentRepository.findMyEnrollments(userId)).willReturn(repoResult);
+
+            // when
+            EnrollmentListResponse response = enrollmentService.findMyEnrollments(userId, null);
+
+            // then
+            assertThat(response.content()).hasSize(3);
+            assertThat(response.content())
+                    .extracting(EnrollmentListItemResponse::status)
+                    .containsExactly(
+                            EnrollmentStatus.CANCELLED,
+                            EnrollmentStatus.CONFIRMED,
+                            EnrollmentStatus.PENDING
+                    );
+            verify(enrollmentRepository, never())
+                    .findMyEnrollmentsByStatus(anyLong(), any(EnrollmentStatus.class));
+        }
+
+        @Test
+        @DisplayName("status=CONFIRMED 필터 시 PENDING 신청은 제외되고 CONFIRMED 건만 반환된다")
+        void findMyEnrollments_withConfirmedFilter_excludesPending() {
+            // given
+            Long userId = 200L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            List<EnrollmentListItemResponse> repoResult = List.of(
+                    new EnrollmentListItemResponse(
+                            501L, 1L, "웹 프로그래밍 입문",
+                            EnrollmentStatus.CONFIRMED, now.minusHours(2), now.minusMinutes(30)
+                    )
+            );
+            given(enrollmentRepository.findMyEnrollmentsByStatus(userId, EnrollmentStatus.CONFIRMED))
+                    .willReturn(repoResult);
+
+            // when
+            EnrollmentListResponse response = enrollmentService.findMyEnrollments(userId, EnrollmentStatus.CONFIRMED);
+
+            // then
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content())
+                    .extracting(EnrollmentListItemResponse::status)
+                    .containsExactly(EnrollmentStatus.CONFIRMED);
+            assertThat(response.content())
+                    .extracting(EnrollmentListItemResponse::status)
+                    .doesNotContain(EnrollmentStatus.PENDING);
+            verify(enrollmentRepository, never()).findMyEnrollments(anyLong());
         }
     }
 }
