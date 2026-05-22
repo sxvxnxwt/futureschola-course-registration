@@ -70,4 +70,9 @@ public class Enrollment {
         enrollment.status = EnrollmentStatus.PENDING;
         return enrollment;
     }
+
+    public void confirm(LocalDateTime now) {
+        this.status = EnrollmentStatus.CONFIRMED;
+        this.confirmedAt = now;
+    }
 }
