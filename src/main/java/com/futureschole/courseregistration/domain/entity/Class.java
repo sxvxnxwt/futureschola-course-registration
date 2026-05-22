@@ -110,4 +110,20 @@ public class Class {
             throw new CustomException(ErrorCode.VALIDATION_FAILED);
         }
     }
+
+    public void changeStatus(ClassStatus target) {
+        if (target == null || !canTransitionTo(target)) {
+            throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+        this.status = target;
+    }
+
+    private boolean canTransitionTo(ClassStatus target) {
+        return (this.status == ClassStatus.DRAFT && target == ClassStatus.OPEN)
+                || (this.status == ClassStatus.OPEN && target == ClassStatus.CLOSED);
+    }
+
+    public boolean isOwnedBy(Long userId) {
+        return this.creator != null && this.creator.getId().equals(userId);
+    }
 }
