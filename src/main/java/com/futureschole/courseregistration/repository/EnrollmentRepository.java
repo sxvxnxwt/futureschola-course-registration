@@ -9,4 +9,10 @@ import java.util.Collection;
 public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 
     long countByClazz_IdAndStatusIn(Long classId, Collection<EnrollmentStatus> statuses);
+
+    boolean existsByUser_IdAndClazz_IdAndStatusIn(
+            Long userId,
+            Long classId,
+            Collection<EnrollmentStatus> statuses
+    );
 }
