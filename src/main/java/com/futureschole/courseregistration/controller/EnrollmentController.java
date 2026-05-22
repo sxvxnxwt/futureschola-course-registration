@@ -2,11 +2,13 @@ package com.futureschole.courseregistration.controller;
 
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
+import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.service.EnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -27,5 +29,14 @@ public class EnrollmentController {
     ) {
         EnrollmentCreateResponse response = enrollmentService.enroll(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/{enrollmentId}/payment")
+    public ResponseEntity<PaymentConfirmResponse> confirmPayment(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long enrollmentId
+    ) {
+        PaymentConfirmResponse response = enrollmentService.confirmPayment(userId, enrollmentId);
+        return ResponseEntity.ok(response);
     }
 }
