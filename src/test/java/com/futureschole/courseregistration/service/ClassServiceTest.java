@@ -4,11 +4,13 @@ import com.futureschole.courseregistration.domain.entity.Class;
 import com.futureschole.courseregistration.domain.entity.User;
 import com.futureschole.courseregistration.domain.enums.ClassListStatusFilter;
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
+import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
 import com.futureschole.courseregistration.dto.*;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
+import com.futureschole.courseregistration.repository.EnrollmentRepository;
 import com.futureschole.courseregistration.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +47,9 @@ class ClassServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private EnrollmentRepository enrollmentRepository;
 
     @InjectMocks
     private ClassService classService;
@@ -83,6 +88,16 @@ class ClassServiceTest {
             Field field = Class.class.getDeclaredField("status");
             field.setAccessible(true);
             field.set(clazz, status);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void setId(Class clazz, Long id) {
+        try {
+            Field field = Class.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(clazz, id);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
@@ -377,6 +392,74 @@ class ClassServiceTest {
 
             // then
             assertThat(response.content()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("강의 상세 조회")
+    class GetClassDetail {
+
+        @Test
+        @DisplayName("OPEN 상태 강의를 조회하면 PENDING+CONFIRMED 합계가 enrolledCount로 반환된다")
+        void getClassDetail_success_calculatesEnrolledCount() {
+            // given
+            Long classId = 10L;
+            Class clazz = buildClassFixture(1L, ClassStatus.OPEN);
+            setId(clazz, classId);
+            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(enrollmentRepository.countByClazz_IdAndStatusIn(
+                    classId,
+                    List.of(EnrollmentStatus.PENDING, EnrollmentStatus.CONFIRMED))
+            ).willReturn(12L);
+
+            // when
+            ClassDetailResponse response = classService.getClassDetail(classId);
+
+            // then
+            assertThat(response.id()).isEqualTo(classId);
+            assertThat(response.status()).isEqualTo(ClassStatus.OPEN);
+            assertThat(response.enrolledCount()).isEqualTo(12L);
+            assertThat(response.capacity()).isEqualTo(30);
+            assertThat(response.creatorId()).isEqualTo(1L);
+            verify(enrollmentRepository).countByClazz_IdAndStatusIn(
+                    classId,
+                    List.of(EnrollmentStatus.PENDING, EnrollmentStatus.CONFIRMED)
+            );
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 id로 조회하면 CLASS_NOT_FOUND 예외가 발생한다")
+        void getClassDetail_notFound() {
+            // given
+            given(classRepository.findById(99L)).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> classService.getClassDetail(99L))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.CLASS_NOT_FOUND);
+
+            verify(enrollmentRepository, never())
+                    .countByClazz_IdAndStatusIn(any(), anyCollection());
+        }
+
+        @Test
+        @DisplayName("DRAFT 상태 강의를 조회하면 CLASS_NOT_FOUND 예외가 발생한다")
+        void getClassDetail_draftHidden() {
+            // given
+            Long classId = 10L;
+            Class draftClass = buildClassFixture(1L, ClassStatus.DRAFT);
+            setId(draftClass, classId);
+            given(classRepository.findById(classId)).willReturn(Optional.of(draftClass));
+
+            // when & then
+            assertThatThrownBy(() -> classService.getClassDetail(classId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.CLASS_NOT_FOUND);
+
+            verify(enrollmentRepository, never())
+                    .countByClazz_IdAndStatusIn(any(), anyCollection());
         }
     }
 }
