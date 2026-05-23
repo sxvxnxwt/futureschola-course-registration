@@ -2,7 +2,9 @@ package com.futureschole.courseregistration.repository;
 
 import com.futureschole.courseregistration.domain.entity.Enrollment;
 import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
-import com.futureschole.courseregistration.dto.EnrollmentListItemResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -10,7 +12,6 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.List;
 
 public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 
@@ -52,29 +53,13 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
             @Param("cancelledAt") LocalDateTime cancelledAt
     );
 
-    @Query("""
-            SELECT new com.futureschole.courseregistration.dto.EnrollmentListItemResponse(
-                e.id, c.id, c.title, e.status, e.createdAt, e.confirmedAt
-            )
-            FROM Enrollment e
-            JOIN e.clazz c
-            WHERE e.user.id = :userId
-            ORDER BY e.createdAt DESC
-            """)
-    List<EnrollmentListItemResponse> findMyEnrollments(@Param("userId") Long userId);
+    @EntityGraph(attributePaths = "clazz")
+    Page<Enrollment> findByUser_Id(Long userId, Pageable pageable);
 
-    @Query("""
-            SELECT new com.futureschole.courseregistration.dto.EnrollmentListItemResponse(
-                e.id, c.id, c.title, e.status, e.createdAt, e.confirmedAt
-            )
-            FROM Enrollment e
-            JOIN e.clazz c
-            WHERE e.user.id = :userId
-              AND e.status = :status
-            ORDER BY e.createdAt DESC
-            """)
-    List<EnrollmentListItemResponse> findMyEnrollmentsByStatus(
-            @Param("userId") Long userId,
-            @Param("status") EnrollmentStatus status
+    @EntityGraph(attributePaths = "clazz")
+    Page<Enrollment> findByUser_IdAndStatus(
+            Long userId,
+            EnrollmentStatus status,
+            Pageable pageable
     );
 }

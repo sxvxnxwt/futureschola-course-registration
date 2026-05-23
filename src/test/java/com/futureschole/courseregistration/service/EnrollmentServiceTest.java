@@ -10,7 +10,7 @@ import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
 import com.futureschole.courseregistration.dto.EnrollmentListItemResponse;
-import com.futureschole.courseregistration.dto.EnrollmentListResponse;
+import com.futureschole.courseregistration.dto.PageResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
@@ -25,17 +25,24 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -664,30 +671,37 @@ class EnrollmentServiceTest {
     @DisplayName("내 수강 신청 목록 조회")
     class FindMyEnrollments {
 
+        private static final Pageable DEFAULT_PAGEABLE =
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "id"));
+
         @Test
-        @DisplayName("status 필터가 없으면 본인의 모든 상태 신청 내역을 createdAt DESC로 반환한다")
+        @DisplayName("status 필터가 없으면 본인의 모든 상태 신청 내역이 반환된다")
         void findMyEnrollments_withoutStatusFilter_returnsAll() {
             // given
             Long userId = 200L;
             LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
-            List<EnrollmentListItemResponse> repoResult = List.of(
-                    new EnrollmentListItemResponse(
-                            502L, 2L, "데이터베이스 기초",
-                            EnrollmentStatus.CANCELLED, now.minusHours(1), null
-                    ),
-                    new EnrollmentListItemResponse(
-                            501L, 1L, "웹 프로그래밍 입문",
-                            EnrollmentStatus.CONFIRMED, now.minusHours(2), now.minusMinutes(30)
-                    ),
-                    new EnrollmentListItemResponse(
-                            500L, 3L, "알고리즘 입문",
-                            EnrollmentStatus.PENDING, now.minusHours(3), null
-                    )
-            );
-            given(enrollmentRepository.findMyEnrollments(userId)).willReturn(repoResult);
+            User user = buildUserRef(userId);
+            Class class1 = buildClass(1L, ClassStatus.OPEN, 30);
+            Class class2 = buildClass(2L, ClassStatus.OPEN, 30);
+            Class class3 = buildClass(3L, ClassStatus.OPEN, 30);
+
+            Enrollment cancelled = buildEnrollment(502L, user, class2, EnrollmentStatus.CANCELLED);
+            setEnrollmentField(cancelled, "createdAt", now.minusHours(1));
+
+            Enrollment confirmed = buildEnrollment(501L, user, class1, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "createdAt", now.minusHours(2));
+            setEnrollmentField(confirmed, "confirmedAt", now.minusMinutes(30));
+
+            Enrollment pending = buildEnrollment(500L, user, class3, EnrollmentStatus.PENDING);
+            setEnrollmentField(pending, "createdAt", now.minusHours(3));
+
+            List<Enrollment> repoResult = List.of(cancelled, confirmed, pending);
+            given(enrollmentRepository.findByUser_Id(eq(userId), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(repoResult, DEFAULT_PAGEABLE, repoResult.size()));
 
             // when
-            EnrollmentListResponse response = enrollmentService.findMyEnrollments(userId, null);
+            PageResponse<EnrollmentListItemResponse> response =
+                    enrollmentService.findMyEnrollments(userId, null, DEFAULT_PAGEABLE);
 
             // then
             assertThat(response.content()).hasSize(3);
@@ -698,8 +712,15 @@ class EnrollmentServiceTest {
                             EnrollmentStatus.CONFIRMED,
                             EnrollmentStatus.PENDING
                     );
+            assertThat(response.content())
+                    .extracting(EnrollmentListItemResponse::id, EnrollmentListItemResponse::classId)
+                    .containsExactly(
+                            tuple(502L, 2L),
+                            tuple(501L, 1L),
+                            tuple(500L, 3L)
+                    );
             verify(enrollmentRepository, never())
-                    .findMyEnrollmentsByStatus(anyLong(), any(EnrollmentStatus.class));
+                    .findByUser_IdAndStatus(anyLong(), any(EnrollmentStatus.class), any(Pageable.class));
         }
 
         @Test
@@ -708,17 +729,20 @@ class EnrollmentServiceTest {
             // given
             Long userId = 200L;
             LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
-            List<EnrollmentListItemResponse> repoResult = List.of(
-                    new EnrollmentListItemResponse(
-                            501L, 1L, "웹 프로그래밍 입문",
-                            EnrollmentStatus.CONFIRMED, now.minusHours(2), now.minusMinutes(30)
-                    )
-            );
-            given(enrollmentRepository.findMyEnrollmentsByStatus(userId, EnrollmentStatus.CONFIRMED))
-                    .willReturn(repoResult);
+            User user = buildUserRef(userId);
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+
+            Enrollment confirmed = buildEnrollment(501L, user, clazz, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "createdAt", now.minusHours(2));
+            setEnrollmentField(confirmed, "confirmedAt", now.minusMinutes(30));
+
+            given(enrollmentRepository.findByUser_IdAndStatus(
+                    eq(userId), eq(EnrollmentStatus.CONFIRMED), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(List.of(confirmed), DEFAULT_PAGEABLE, 1));
 
             // when
-            EnrollmentListResponse response = enrollmentService.findMyEnrollments(userId, EnrollmentStatus.CONFIRMED);
+            PageResponse<EnrollmentListItemResponse> response =
+                    enrollmentService.findMyEnrollments(userId, EnrollmentStatus.CONFIRMED, DEFAULT_PAGEABLE);
 
             // then
             assertThat(response.content()).hasSize(1);
@@ -728,7 +752,107 @@ class EnrollmentServiceTest {
             assertThat(response.content())
                     .extracting(EnrollmentListItemResponse::status)
                     .doesNotContain(EnrollmentStatus.PENDING);
-            verify(enrollmentRepository, never()).findMyEnrollments(anyLong());
+            verify(enrollmentRepository, never())
+                    .findByUser_Id(anyLong(), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("status 필터가 없을 때 전달된 Pageable이 Repository로 그대로 전파된다")
+        void findMyEnrollments_passesPageableToRepository() {
+            // given
+            Long userId = 200L;
+            Pageable pageable = PageRequest.of(3, 5, Sort.by(Sort.Direction.ASC, "id"));
+            given(enrollmentRepository.findByUser_Id(eq(userId), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), pageable, 0));
+
+            // when
+            enrollmentService.findMyEnrollments(userId, null, pageable);
+
+            // then
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(enrollmentRepository).findByUser_Id(eq(userId), captor.capture());
+            Pageable captured = captor.getValue();
+            assertThat(captured.getPageNumber()).isEqualTo(3);
+            assertThat(captured.getPageSize()).isEqualTo(5);
+            assertThat(captured.getSort().getOrderFor("id"))
+                    .isNotNull()
+                    .satisfies(order -> assertThat(order.getDirection()).isEqualTo(Sort.Direction.ASC));
+        }
+
+        @Test
+        @DisplayName("status 필터가 있을 때도 전달된 Pageable이 Repository로 그대로 전파된다")
+        void findMyEnrollments_passesPageableToRepository_withStatusFilter() {
+            // given
+            Long userId = 200L;
+            Pageable pageable = PageRequest.of(1, 50, Sort.by(Sort.Direction.DESC, "id"));
+            given(enrollmentRepository.findByUser_IdAndStatus(
+                    eq(userId), eq(EnrollmentStatus.PENDING), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), pageable, 0));
+
+            // when
+            enrollmentService.findMyEnrollments(userId, EnrollmentStatus.PENDING, pageable);
+
+            // then
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(enrollmentRepository).findByUser_IdAndStatus(
+                    eq(userId), eq(EnrollmentStatus.PENDING), captor.capture());
+            Pageable captured = captor.getValue();
+            assertThat(captured.getPageNumber()).isEqualTo(1);
+            assertThat(captured.getPageSize()).isEqualTo(50);
+        }
+
+        @Test
+        @DisplayName("Repository가 반환한 Page는 PageResponse의 모든 필드로 정확히 매핑된다")
+        void findMyEnrollments_mapsPageMetadataIntoPageResponse() {
+            // given
+            Long userId = 200L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            User user = buildUserRef(userId);
+            Class class1 = buildClass(3L, ClassStatus.OPEN, 30);
+            Class class2 = buildClass(1L, ClassStatus.OPEN, 30);
+
+            Enrollment pending = buildEnrollment(500L, user, class1, EnrollmentStatus.PENDING);
+            setEnrollmentField(pending, "createdAt", now.minusHours(3));
+
+            Enrollment confirmed = buildEnrollment(501L, user, class2, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "createdAt", now.minusHours(2));
+            setEnrollmentField(confirmed, "confirmedAt", now.minusMinutes(30));
+
+            Pageable pageable = PageRequest.of(2, 2, Sort.by(Sort.Direction.DESC, "id"));
+            Page<Enrollment> page = new PageImpl<>(List.of(pending, confirmed), pageable, 7);
+            given(enrollmentRepository.findByUser_Id(eq(userId), any(Pageable.class)))
+                    .willReturn(page);
+
+            // when
+            PageResponse<EnrollmentListItemResponse> response =
+                    enrollmentService.findMyEnrollments(userId, null, pageable);
+
+            // then
+            assertThat(response.content()).hasSize(2);
+            assertThat(response.page()).isEqualTo(2);
+            assertThat(response.size()).isEqualTo(2);
+            assertThat(response.totalElements()).isEqualTo(7);
+            assertThat(response.totalPages()).isEqualTo(4);
+            assertThat(response.last()).isFalse();
+        }
+
+        @Test
+        @DisplayName("빈 결과일 때 content는 빈 리스트, totalElements는 0이 된다")
+        void findMyEnrollments_emptyPage() {
+            // given
+            Long userId = 200L;
+            given(enrollmentRepository.findByUser_Id(eq(userId), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), DEFAULT_PAGEABLE, 0));
+
+            // when
+            PageResponse<EnrollmentListItemResponse> response =
+                    enrollmentService.findMyEnrollments(userId, null, DEFAULT_PAGEABLE);
+
+            // then
+            assertThat(response.content()).isEmpty();
+            assertThat(response.totalElements()).isZero();
+            assertThat(response.totalPages()).isZero();
+            assertThat(response.last()).isTrue();
         }
     }
 }

@@ -4,12 +4,16 @@ import com.futureschole.courseregistration.domain.enums.ClassListStatusFilter;
 import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
 import com.futureschole.courseregistration.dto.ClassDetailResponse;
-import com.futureschole.courseregistration.dto.ClassListResponse;
+import com.futureschole.courseregistration.dto.ClassListItemResponse;
 import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
 import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
+import com.futureschole.courseregistration.dto.PageResponse;
 import com.futureschole.courseregistration.service.ClassService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,10 +52,11 @@ public class ClassController {
     }
 
     @GetMapping
-    public ResponseEntity<ClassListResponse> getClasses(
-            @RequestParam(required = false) ClassListStatusFilter status
+    public ResponseEntity<PageResponse<ClassListItemResponse>> getClasses(
+            @RequestParam(required = false) ClassListStatusFilter status,
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(classService.getClasses(status));
+        return ResponseEntity.ok(classService.getClasses(status, pageable));
     }
 
     @GetMapping("/{classId}")
