@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -33,6 +34,7 @@ public class EnrollmentService {
     private final EnrollmentRepository enrollmentRepository;
     private final ClassRepository classRepository;
     private final UserRepository userRepository;
+    private final Clock clock;
 
     @Transactional
     public EnrollmentCreateResponse enroll(Long userId, EnrollmentCreateRequest request) {
@@ -85,7 +87,10 @@ public class EnrollmentService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
 
-        int updated = enrollmentRepository.cancelIfActive(enrollmentId, userId, LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now(clock);
+        enrollment.ensureCancellable(now);
+
+        int updated = enrollmentRepository.cancelIfActive(enrollmentId, userId, now);
         if (updated == 0) {
             throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
         }

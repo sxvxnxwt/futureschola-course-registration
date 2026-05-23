@@ -27,8 +27,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -56,8 +58,18 @@ class EnrollmentServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private Clock clock;
+
     @InjectMocks
     private EnrollmentService enrollmentService;
+
+    private static final ZoneId TEST_ZONE = ZoneId.systemDefault();
+
+    private void mockClockNow(LocalDateTime now) {
+        lenient().when(clock.instant()).thenReturn(now.atZone(TEST_ZONE).toInstant());
+        lenient().when(clock.getZone()).thenReturn(TEST_ZONE);
+    }
 
     private static final List<EnrollmentStatus> ACTIVE_STATUSES =
             List.of(EnrollmentStatus.PENDING, EnrollmentStatus.CONFIRMED);
@@ -396,11 +408,14 @@ class EnrollmentServiceTest {
             // given
             Long userId = 200L;
             Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
             Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
             User user = buildUserRef(userId);
             Enrollment pending = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
             Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
-            setEnrollmentField(cancelled, "cancelledAt", LocalDateTime.of(2026, 5, 22, 10, 0));
+            setEnrollmentField(cancelled, "cancelledAt", now);
 
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(pending))
@@ -423,16 +438,19 @@ class EnrollmentServiceTest {
             // given
             Long userId = 200L;
             Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
             Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
             User user = buildUserRef(userId);
-            LocalDateTime confirmedAt = LocalDateTime.of(2026, 5, 1, 10, 0);
+            LocalDateTime confirmedAt = now.minusDays(1);
 
             Enrollment confirmed = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
             setEnrollmentField(confirmed, "confirmedAt", confirmedAt);
 
             Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
             setEnrollmentField(cancelled, "confirmedAt", confirmedAt);
-            setEnrollmentField(cancelled, "cancelledAt", LocalDateTime.of(2026, 5, 22, 10, 0));
+            setEnrollmentField(cancelled, "cancelledAt", now);
 
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(confirmed))
@@ -456,6 +474,9 @@ class EnrollmentServiceTest {
             // given
             Long userId = 200L;
             Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
             Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
             User user = buildUserRef(userId);
             Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
@@ -469,6 +490,131 @@ class EnrollmentServiceTest {
                     .isInstanceOf(CustomException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        @Test
+        @DisplayName("PENDING 상태는 confirmedAt이 null이어도 취소에 성공한다")
+        void cancel_pendingWithNullConfirmedAt_success() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            Enrollment pending = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+            assertThat(pending.getConfirmedAt()).isNull();
+
+            Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+            setEnrollmentField(cancelled, "cancelledAt", now);
+
+            given(enrollmentRepository.findById(enrollmentId))
+                    .willReturn(Optional.of(pending))
+                    .willReturn(Optional.of(cancelled));
+            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(1);
+
+            // when
+            EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
+
+            // then
+            assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(response.cancelledAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("CONFIRMED 상태에서 confirmedAt이 now-6일23시간이면 취소에 성공한다")
+        void cancel_confirmedWithin7Days_success() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            LocalDateTime confirmedAt = now.minusDays(6).minusHours(23);
+
+            Enrollment confirmed = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "confirmedAt", confirmedAt);
+
+            Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+            setEnrollmentField(cancelled, "confirmedAt", confirmedAt);
+            setEnrollmentField(cancelled, "cancelledAt", now);
+
+            given(enrollmentRepository.findById(enrollmentId))
+                    .willReturn(Optional.of(confirmed))
+                    .willReturn(Optional.of(cancelled));
+            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(1);
+
+            // when
+            EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
+
+            // then
+            assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
+        }
+
+        @Test
+        @DisplayName("CONFIRMED 상태에서 confirmedAt이 now-7일1초이면 CANCEL_PERIOD_EXPIRED 예외가 발생하고 cancelIfActive는 호출되지 않는다")
+        void cancel_confirmedExpired_returnsCancelPeriodExpired() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            LocalDateTime confirmedAt = now.minusDays(7).minusSeconds(1);
+
+            Enrollment confirmed = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "confirmedAt", confirmedAt);
+
+            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(confirmed));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.cancel(userId, enrollmentId))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.CANCEL_PERIOD_EXPIRED);
+
+            verify(enrollmentRepository, never())
+                    .cancelIfActive(anyLong(), anyLong(), any(LocalDateTime.class));
+        }
+
+        @Test
+        @DisplayName("CONFIRMED 상태에서 confirmedAt이 정확히 now-7일인 경계값에서도 취소에 성공한다 (포함 정책)")
+        void cancel_confirmedExactly7Days_success() {
+            // given
+            Long userId = 200L;
+            Long enrollmentId = 500L;
+            LocalDateTime now = LocalDateTime.of(2026, 5, 22, 10, 0);
+            mockClockNow(now);
+
+            Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
+            User user = buildUserRef(userId);
+            LocalDateTime confirmedAt = now.minusDays(7);
+
+            Enrollment confirmed = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "confirmedAt", confirmedAt);
+
+            Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+            setEnrollmentField(cancelled, "confirmedAt", confirmedAt);
+            setEnrollmentField(cancelled, "cancelledAt", now);
+
+            given(enrollmentRepository.findById(enrollmentId))
+                    .willReturn(Optional.of(confirmed))
+                    .willReturn(Optional.of(cancelled));
+            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(1);
+
+            // when
+            EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
+
+            // then
+            assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
         }
 
         @Test

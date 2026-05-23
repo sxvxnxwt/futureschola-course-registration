@@ -1,6 +1,8 @@
 package com.futureschole.courseregistration.domain.entity;
 
 import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
+import com.futureschole.courseregistration.exception.CustomException;
+import com.futureschole.courseregistration.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -79,5 +81,14 @@ public class Enrollment {
     public void cancel(LocalDateTime now) {
         this.status = EnrollmentStatus.CANCELLED;
         this.cancelledAt = now;
+    }
+
+    public void ensureCancellable(LocalDateTime now) {
+        if (this.status != EnrollmentStatus.CONFIRMED) {
+            return;
+        }
+        if (this.confirmedAt.plusDays(7).isBefore(now)) {
+            throw new CustomException(ErrorCode.CANCEL_PERIOD_EXPIRED);
+        }
     }
 }
