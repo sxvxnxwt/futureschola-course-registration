@@ -21,6 +21,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
@@ -33,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -323,16 +329,20 @@ class ClassServiceTest {
     @DisplayName("강의 목록 조회")
     class GetClasses {
 
+        private static final Pageable DEFAULT_PAGEABLE =
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "id"));
+
         @Test
         @DisplayName("status=OPEN 필터링 시 OPEN 강의만 조회된다")
         void getClasses_filterOpen() {
             // given
             Class openClass = buildClassFixture(1L, ClassStatus.OPEN);
-            given(classRepository.findAllByStatusInOrderByIdDesc(List.of(ClassStatus.OPEN)))
-                    .willReturn(List.of(openClass));
+            given(classRepository.findAllByStatusIn(eq(List.of(ClassStatus.OPEN)), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(List.of(openClass), DEFAULT_PAGEABLE, 1));
 
             // when
-            ClassListResponse response = classService.getClasses(ClassListStatusFilter.OPEN);
+            PageResponse<ClassListItemResponse> response =
+                    classService.getClasses(ClassListStatusFilter.OPEN, DEFAULT_PAGEABLE);
 
             // then
             assertThat(response.content()).hasSize(1);
@@ -344,11 +354,12 @@ class ClassServiceTest {
         void getClasses_filterClosed() {
             // given
             Class closedClass = buildClassFixture(1L, ClassStatus.CLOSED);
-            given(classRepository.findAllByStatusInOrderByIdDesc(List.of(ClassStatus.CLOSED)))
-                    .willReturn(List.of(closedClass));
+            given(classRepository.findAllByStatusIn(eq(List.of(ClassStatus.CLOSED)), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(List.of(closedClass), DEFAULT_PAGEABLE, 1));
 
             // when
-            ClassListResponse response = classService.getClasses(ClassListStatusFilter.CLOSED);
+            PageResponse<ClassListItemResponse> response =
+                    classService.getClasses(ClassListStatusFilter.CLOSED, DEFAULT_PAGEABLE);
 
             // then
             assertThat(response.content()).hasSize(1);
@@ -361,15 +372,16 @@ class ClassServiceTest {
             // given
             Class openClass = buildClassFixture(1L, ClassStatus.OPEN);
             Class closedClass = buildClassFixture(2L, ClassStatus.CLOSED);
-            given(classRepository.findAllByStatusInOrderByIdDesc(anyCollection()))
-                    .willReturn(List.of(openClass, closedClass));
+            given(classRepository.findAllByStatusIn(anyCollection(), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(List.of(openClass, closedClass), DEFAULT_PAGEABLE, 2));
 
             // when
-            ClassListResponse response = classService.getClasses(null);
+            PageResponse<ClassListItemResponse> response =
+                    classService.getClasses(null, DEFAULT_PAGEABLE);
 
             // then
             ArgumentCaptor<Collection<ClassStatus>> captor = ArgumentCaptor.forClass(Collection.class);
-            verify(classRepository).findAllByStatusInOrderByIdDesc(captor.capture());
+            verify(classRepository).findAllByStatusIn(captor.capture(), any(Pageable.class));
             assertThat(captor.getValue())
                     .containsExactlyInAnyOrder(ClassStatus.OPEN, ClassStatus.CLOSED)
                     .doesNotContain(ClassStatus.DRAFT);
@@ -381,17 +393,67 @@ class ClassServiceTest {
         }
 
         @Test
-        @DisplayName("결과가 없으면 빈 배열을 반환한다")
+        @DisplayName("결과가 없으면 content는 빈 리스트, totalElements는 0이 된다")
         void getClasses_emptyResult() {
             // given
-            given(classRepository.findAllByStatusInOrderByIdDesc(anyCollection()))
-                    .willReturn(Collections.emptyList());
+            given(classRepository.findAllByStatusIn(anyCollection(), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), DEFAULT_PAGEABLE, 0));
 
             // when
-            ClassListResponse response = classService.getClasses(ClassListStatusFilter.OPEN);
+            PageResponse<ClassListItemResponse> response =
+                    classService.getClasses(ClassListStatusFilter.OPEN, DEFAULT_PAGEABLE);
 
             // then
             assertThat(response.content()).isEmpty();
+            assertThat(response.totalElements()).isZero();
+            assertThat(response.totalPages()).isZero();
+            assertThat(response.last()).isTrue();
+        }
+
+        @Test
+        @DisplayName("호출 시 전달된 Pageable이 Repository에 그대로 전파된다")
+        void getClasses_passesPageableToRepository() {
+            // given
+            Pageable pageable = PageRequest.of(2, 10, Sort.by(Sort.Direction.ASC, "id"));
+            given(classRepository.findAllByStatusIn(anyCollection(), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), pageable, 0));
+
+            // when
+            classService.getClasses(null, pageable);
+
+            // then
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(classRepository).findAllByStatusIn(anyCollection(), captor.capture());
+            Pageable captured = captor.getValue();
+            assertThat(captured.getPageNumber()).isEqualTo(2);
+            assertThat(captured.getPageSize()).isEqualTo(10);
+            assertThat(captured.getSort().getOrderFor("id"))
+                    .isNotNull()
+                    .satisfies(order -> assertThat(order.getDirection()).isEqualTo(Sort.Direction.ASC));
+        }
+
+        @Test
+        @DisplayName("Repository가 반환한 Page는 PageResponse의 모든 필드로 정확히 매핑된다")
+        void getClasses_mapsPageMetadataIntoPageResponse() {
+            // given
+            Class c1 = buildClassFixture(1L, ClassStatus.OPEN);
+            Class c2 = buildClassFixture(2L, ClassStatus.OPEN);
+            Pageable pageable = PageRequest.of(1, 2, Sort.by(Sort.Direction.DESC, "id"));
+            Page<Class> page = new PageImpl<>(List.of(c1, c2), pageable, 5);
+            given(classRepository.findAllByStatusIn(anyCollection(), any(Pageable.class)))
+                    .willReturn(page);
+
+            // when
+            PageResponse<ClassListItemResponse> response =
+                    classService.getClasses(null, pageable);
+
+            // then
+            assertThat(response.content()).hasSize(2);
+            assertThat(response.page()).isEqualTo(1);
+            assertThat(response.size()).isEqualTo(2);
+            assertThat(response.totalElements()).isEqualTo(5);
+            assertThat(response.totalPages()).isEqualTo(3);
+            assertThat(response.last()).isFalse();
         }
     }
 
