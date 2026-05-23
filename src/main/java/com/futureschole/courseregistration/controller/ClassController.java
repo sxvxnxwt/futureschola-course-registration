@@ -1,14 +1,17 @@
 package com.futureschole.courseregistration.controller;
 
 import com.futureschole.courseregistration.domain.enums.ClassListStatusFilter;
+import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
 import com.futureschole.courseregistration.dto.ClassDetailResponse;
+import com.futureschole.courseregistration.dto.ClassEnrollmentItemResponse;
 import com.futureschole.courseregistration.dto.ClassListItemResponse;
 import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
 import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
 import com.futureschole.courseregistration.dto.PageResponse;
 import com.futureschole.courseregistration.service.ClassService;
+import com.futureschole.courseregistration.service.EnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -31,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ClassController {
 
     private final ClassService classService;
+    private final EnrollmentService enrollmentService;
 
     @PostMapping
     public ResponseEntity<ClassCreateResponse> createClass(
@@ -64,5 +68,17 @@ public class ClassController {
             @PathVariable Long classId
     ) {
         return ResponseEntity.ok(classService.getClassDetail(classId));
+    }
+
+    @GetMapping("/{classId}/enrollments")
+    public ResponseEntity<PageResponse<ClassEnrollmentItemResponse>> getClassEnrollments(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long classId,
+            @RequestParam(required = false) EnrollmentStatus status,
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return ResponseEntity.ok(
+                enrollmentService.findClassEnrollments(userId, classId, status, pageable)
+        );
     }
 }
