@@ -38,7 +38,7 @@ public class EnrollmentService {
     public EnrollmentCreateResponse enroll(Long userId, EnrollmentCreateRequest request) {
         Long classId = request.classId();
 
-        Class clazz = classRepository.findById(classId)
+        Class clazz = classRepository.findByIdForUpdate(classId)
                 .orElseThrow(() -> new CustomException(ErrorCode.CLASS_NOT_FOUND));
 
         if (clazz.getStatus() == ClassStatus.DRAFT) {
@@ -104,7 +104,6 @@ public class EnrollmentService {
     }
 
     private Enrollment reserveSeatAndSave(User user, Class clazz) {
-        // TODO: 비관적 락 적용 지점 (SELECT ... FOR UPDATE on Class)
         long activeCount = enrollmentRepository.countByClazz_IdAndStatusIn(clazz.getId(), ACTIVE_STATUSES);
         if (activeCount >= clazz.getCapacity()) {
             throw new CustomException(ErrorCode.CLASS_FULL);
