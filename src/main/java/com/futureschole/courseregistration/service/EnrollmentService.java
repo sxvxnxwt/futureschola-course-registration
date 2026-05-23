@@ -57,11 +57,8 @@ public class EnrollmentService {
         return EnrollmentCreateResponse.from(saved);
     }
 
-    // 강의 상태(OPEN/CLOSED)는 검증하지 않는다. PENDING 사이에 OPEN→CLOSED로 전이되어도 결제는 허용한다.
-    // 신청 시점에 이미 정원에 포함되어 있고, CLOSED는 신규 신청 차단 의미일 뿐 기존 PENDING의 결제 차단이 아니다.
     @Transactional
     public PaymentConfirmResponse confirmPayment(Long userId, Long enrollmentId) {
-        // TODO: 멱등성/동시성 처리 — 추후 비관적 락 or status='PENDING' 조건부 UPDATE
         Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
 
@@ -69,12 +66,14 @@ public class EnrollmentService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
 
-        if (enrollment.getStatus() != EnrollmentStatus.PENDING) {
+        int updated = enrollmentRepository.confirmIfPending(enrollmentId, userId, LocalDateTime.now());
+        if (updated == 0) {
             throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
         }
 
-        enrollment.confirm(LocalDateTime.now());
-        return PaymentConfirmResponse.from(enrollment);
+        Enrollment confirmed = enrollmentRepository.findById(enrollmentId)
+                .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
+        return PaymentConfirmResponse.from(confirmed);
     }
 
     @Transactional
