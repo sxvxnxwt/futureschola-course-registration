@@ -38,7 +38,7 @@ public class EnrollmentService {
     public EnrollmentCreateResponse enroll(Long userId, EnrollmentCreateRequest request) {
         Long classId = request.classId();
 
-        Class clazz = classRepository.findById(classId)
+        Class clazz = classRepository.findByIdForUpdate(classId)
                 .orElseThrow(() -> new CustomException(ErrorCode.CLASS_NOT_FOUND));
 
         if (clazz.getStatus() == ClassStatus.DRAFT) {
@@ -57,11 +57,8 @@ public class EnrollmentService {
         return EnrollmentCreateResponse.from(saved);
     }
 
-    // 강의 상태(OPEN/CLOSED)는 검증하지 않는다. PENDING 사이에 OPEN→CLOSED로 전이되어도 결제는 허용한다.
-    // 신청 시점에 이미 정원에 포함되어 있고, CLOSED는 신규 신청 차단 의미일 뿐 기존 PENDING의 결제 차단이 아니다.
     @Transactional
     public PaymentConfirmResponse confirmPayment(Long userId, Long enrollmentId) {
-        // TODO: 멱등성/동시성 처리 — 추후 비관적 락 or status='PENDING' 조건부 UPDATE
         Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
 
@@ -69,17 +66,18 @@ public class EnrollmentService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
 
-        if (enrollment.getStatus() != EnrollmentStatus.PENDING) {
+        int updated = enrollmentRepository.confirmIfPending(enrollmentId, userId, LocalDateTime.now());
+        if (updated == 0) {
             throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
         }
 
-        enrollment.confirm(LocalDateTime.now());
-        return PaymentConfirmResponse.from(enrollment);
+        Enrollment confirmed = enrollmentRepository.findById(enrollmentId)
+                .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
+        return PaymentConfirmResponse.from(confirmed);
     }
 
     @Transactional
     public EnrollmentCancelResponse cancel(Long userId, Long enrollmentId) {
-        // TODO: 결제 확정과의 동시성 처리 — 추후 비관적 락 or 조건부 UPDATE
         Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
 
@@ -87,12 +85,14 @@ public class EnrollmentService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
 
-        if (enrollment.getStatus() == EnrollmentStatus.CANCELLED) {
+        int updated = enrollmentRepository.cancelIfActive(enrollmentId, userId, LocalDateTime.now());
+        if (updated == 0) {
             throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
         }
 
-        enrollment.cancel(LocalDateTime.now());
-        return EnrollmentCancelResponse.from(enrollment);
+        Enrollment cancelled = enrollmentRepository.findById(enrollmentId)
+                .orElseThrow(() -> new CustomException(ErrorCode.ENROLLMENT_NOT_FOUND));
+        return EnrollmentCancelResponse.from(cancelled);
     }
 
     @Transactional(readOnly = true)
@@ -104,7 +104,6 @@ public class EnrollmentService {
     }
 
     private Enrollment reserveSeatAndSave(User user, Class clazz) {
-        // TODO: 비관적 락 적용 지점 (SELECT ... FOR UPDATE on Class)
         long activeCount = enrollmentRepository.countByClazz_IdAndStatusIn(clazz.getId(), ACTIVE_STATUSES);
         if (activeCount >= clazz.getCapacity()) {
             throw new CustomException(ErrorCode.CLASS_FULL);

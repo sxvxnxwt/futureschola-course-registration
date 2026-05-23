@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -281,9 +282,15 @@ class EnrollmentServiceTest {
             Long enrollmentId = 500L;
             Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
             User user = buildUserRef(userId);
-            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+            Enrollment pending = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+            Enrollment confirmed = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "confirmedAt", LocalDateTime.of(2026, 5, 22, 10, 0));
 
-            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+            given(enrollmentRepository.findById(enrollmentId))
+                    .willReturn(Optional.of(pending))
+                    .willReturn(Optional.of(confirmed));
+            given(enrollmentRepository.confirmIfPending(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(1);
 
             // when
             PaymentConfirmResponse response = enrollmentService.confirmPayment(userId, enrollmentId);
@@ -292,9 +299,6 @@ class EnrollmentServiceTest {
             assertThat(response.id()).isEqualTo(enrollmentId);
             assertThat(response.status()).isEqualTo(EnrollmentStatus.CONFIRMED);
             assertThat(response.confirmedAt()).isNotNull();
-
-            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
-            assertThat(enrollment.getConfirmedAt()).isNotNull();
         }
 
         @Test
@@ -318,6 +322,8 @@ class EnrollmentServiceTest {
 
             assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
             assertThat(enrollment.getConfirmedAt()).isNull();
+            verify(enrollmentRepository, never())
+                    .confirmIfPending(anyLong(), anyLong(), any(LocalDateTime.class));
         }
 
         @Test
@@ -331,6 +337,8 @@ class EnrollmentServiceTest {
             Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
 
             given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+            given(enrollmentRepository.confirmIfPending(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(0);
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.confirmPayment(userId, enrollmentId))
@@ -350,6 +358,8 @@ class EnrollmentServiceTest {
             Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
 
             given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+            given(enrollmentRepository.confirmIfPending(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(0);
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.confirmPayment(userId, enrollmentId))
@@ -370,6 +380,9 @@ class EnrollmentServiceTest {
                     .isInstanceOf(CustomException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.ENROLLMENT_NOT_FOUND);
+
+            verify(enrollmentRepository, never())
+                    .confirmIfPending(anyLong(), anyLong(), any(LocalDateTime.class));
         }
     }
 
@@ -385,9 +398,15 @@ class EnrollmentServiceTest {
             Long enrollmentId = 500L;
             Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
             User user = buildUserRef(userId);
-            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+            Enrollment pending = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.PENDING);
+            Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+            setEnrollmentField(cancelled, "cancelledAt", LocalDateTime.of(2026, 5, 22, 10, 0));
 
-            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+            given(enrollmentRepository.findById(enrollmentId))
+                    .willReturn(Optional.of(pending))
+                    .willReturn(Optional.of(cancelled));
+            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(1);
 
             // when
             EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
@@ -396,10 +415,6 @@ class EnrollmentServiceTest {
             assertThat(response.id()).isEqualTo(enrollmentId);
             assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
             assertThat(response.cancelledAt()).isNotNull();
-
-            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
-            assertThat(enrollment.getCancelledAt()).isNotNull();
-            assertThat(enrollment.getConfirmedAt()).isNull();
         }
 
         @Test
@@ -410,11 +425,20 @@ class EnrollmentServiceTest {
             Long enrollmentId = 500L;
             Class clazz = buildClass(1L, ClassStatus.OPEN, 30);
             User user = buildUserRef(userId);
-            Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
             LocalDateTime confirmedAt = LocalDateTime.of(2026, 5, 1, 10, 0);
-            setEnrollmentField(enrollment, "confirmedAt", confirmedAt);
 
-            given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+            Enrollment confirmed = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CONFIRMED);
+            setEnrollmentField(confirmed, "confirmedAt", confirmedAt);
+
+            Enrollment cancelled = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
+            setEnrollmentField(cancelled, "confirmedAt", confirmedAt);
+            setEnrollmentField(cancelled, "cancelledAt", LocalDateTime.of(2026, 5, 22, 10, 0));
+
+            given(enrollmentRepository.findById(enrollmentId))
+                    .willReturn(Optional.of(confirmed))
+                    .willReturn(Optional.of(cancelled));
+            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(1);
 
             // when
             EnrollmentCancelResponse response = enrollmentService.cancel(userId, enrollmentId);
@@ -423,10 +447,7 @@ class EnrollmentServiceTest {
             assertThat(response.id()).isEqualTo(enrollmentId);
             assertThat(response.status()).isEqualTo(EnrollmentStatus.CANCELLED);
             assertThat(response.cancelledAt()).isNotNull();
-
-            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
-            assertThat(enrollment.getCancelledAt()).isNotNull();
-            assertThat(enrollment.getConfirmedAt()).isEqualTo(confirmedAt);
+            assertThat(cancelled.getConfirmedAt()).isEqualTo(confirmedAt);
         }
 
         @Test
@@ -440,6 +461,8 @@ class EnrollmentServiceTest {
             Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
 
             given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
+            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+                    .willReturn(0);
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.cancel(userId, enrollmentId))
@@ -460,6 +483,9 @@ class EnrollmentServiceTest {
                     .isInstanceOf(CustomException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.ENROLLMENT_NOT_FOUND);
+
+            verify(enrollmentRepository, never())
+                    .cancelIfActive(anyLong(), anyLong(), any(LocalDateTime.class));
         }
 
         @Test
@@ -483,6 +509,8 @@ class EnrollmentServiceTest {
 
             assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
             assertThat(enrollment.getCancelledAt()).isNull();
+            verify(enrollmentRepository, never())
+                    .cancelIfActive(anyLong(), anyLong(), any(LocalDateTime.class));
         }
     }
 
