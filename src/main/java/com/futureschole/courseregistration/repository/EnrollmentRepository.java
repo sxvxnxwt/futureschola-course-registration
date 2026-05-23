@@ -37,6 +37,21 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
             @Param("confirmedAt") LocalDateTime confirmedAt
     );
 
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Enrollment e
+            SET e.status = 'CANCELLED',
+                e.cancelledAt = :cancelledAt
+            WHERE e.id = :id
+              AND e.user.id = :userId
+              AND e.status IN ('PENDING', 'CONFIRMED')
+            """)
+    int cancelIfActive(
+            @Param("id") Long enrollmentId,
+            @Param("userId") Long userId,
+            @Param("cancelledAt") LocalDateTime cancelledAt
+    );
+
     @Query("""
             SELECT new com.futureschole.courseregistration.dto.EnrollmentListItemResponse(
                 e.id, c.id, c.title, e.status, e.createdAt, e.confirmedAt
