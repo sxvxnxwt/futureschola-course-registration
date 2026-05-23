@@ -4,11 +4,15 @@ import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
-import com.futureschole.courseregistration.dto.EnrollmentListResponse;
+import com.futureschole.courseregistration.dto.EnrollmentListItemResponse;
+import com.futureschole.courseregistration.dto.PageResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.service.EnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,11 +50,12 @@ public class EnrollmentController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<EnrollmentListResponse> findMyEnrollments(
+    public ResponseEntity<PageResponse<EnrollmentListItemResponse>> findMyEnrollments(
             @RequestHeader("X-User-Id") Long userId,
-            @RequestParam(required = false) EnrollmentStatus status
+            @RequestParam(required = false) EnrollmentStatus status,
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(enrollmentService.findMyEnrollments(userId, status));
+        return ResponseEntity.ok(enrollmentService.findMyEnrollments(userId, status, pageable));
     }
 
     @PostMapping("/{enrollmentId}/cancel")

@@ -9,7 +9,7 @@ import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
 import com.futureschole.courseregistration.dto.EnrollmentListItemResponse;
-import com.futureschole.courseregistration.dto.EnrollmentListResponse;
+import com.futureschole.courseregistration.dto.PageResponse;
 import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
@@ -17,6 +17,8 @@ import com.futureschole.courseregistration.repository.ClassRepository;
 import com.futureschole.courseregistration.repository.EnrollmentRepository;
 import com.futureschole.courseregistration.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -101,11 +103,16 @@ public class EnrollmentService {
     }
 
     @Transactional(readOnly = true)
-    public EnrollmentListResponse findMyEnrollments(Long userId, EnrollmentStatus statusFilter) {
-        List<EnrollmentListItemResponse> content = (statusFilter == null)
-                ? enrollmentRepository.findMyEnrollments(userId)
-                : enrollmentRepository.findMyEnrollmentsByStatus(userId, statusFilter);
-        return new EnrollmentListResponse(content);
+    public PageResponse<EnrollmentListItemResponse> findMyEnrollments(
+            Long userId,
+            EnrollmentStatus statusFilter,
+            Pageable pageable
+    ) {
+        Page<Enrollment> page = (statusFilter == null)
+                ? enrollmentRepository.findByUser_Id(userId, pageable)
+                : enrollmentRepository.findByUser_IdAndStatus(userId, statusFilter, pageable);
+
+        return PageResponse.from(page.map(EnrollmentListItemResponse::from));
     }
 
     private Enrollment reserveSeatAndSave(User user, Class clazz) {
