@@ -9,15 +9,17 @@ import com.futureschole.courseregistration.dto.ClassCreateRequest;
 import com.futureschole.courseregistration.dto.ClassCreateResponse;
 import com.futureschole.courseregistration.dto.ClassDetailResponse;
 import com.futureschole.courseregistration.dto.ClassListItemResponse;
-import com.futureschole.courseregistration.dto.ClassListResponse;
 import com.futureschole.courseregistration.dto.ClassStatusChangeRequest;
 import com.futureschole.courseregistration.dto.ClassStatusChangeResponse;
+import com.futureschole.courseregistration.dto.PageResponse;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
 import com.futureschole.courseregistration.repository.ClassRepository;
 import com.futureschole.courseregistration.repository.EnrollmentRepository;
 import com.futureschole.courseregistration.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,18 +66,16 @@ public class ClassService {
     }
 
     @Transactional(readOnly = true)
-    public ClassListResponse getClasses(ClassListStatusFilter statusFilter) {
+    public PageResponse<ClassListItemResponse> getClasses(ClassListStatusFilter statusFilter, Pageable pageable) {
         List<ClassStatus> statuses = (statusFilter == null)
                 ? List.of(ClassStatus.OPEN, ClassStatus.CLOSED)
                 : List.of(statusFilter.toClassStatus());
 
-        List<ClassListItemResponse> content = classRepository
-                .findAllByStatusInOrderByIdDesc(statuses)
-                .stream()
-                .map(ClassListItemResponse::from)
-                .toList();
+        Page<ClassListItemResponse> page = classRepository
+                .findAllByStatusIn(statuses, pageable)
+                .map(ClassListItemResponse::from);
 
-        return new ClassListResponse(content);
+        return PageResponse.from(page);
     }
 
     @Transactional(readOnly = true)
