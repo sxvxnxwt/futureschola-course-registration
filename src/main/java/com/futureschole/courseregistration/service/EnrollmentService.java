@@ -5,6 +5,7 @@ import com.futureschole.courseregistration.domain.entity.Enrollment;
 import com.futureschole.courseregistration.domain.entity.User;
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
 import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
+import com.futureschole.courseregistration.dto.ClassEnrollmentItemResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
@@ -113,6 +114,26 @@ public class EnrollmentService {
                 : enrollmentRepository.findByUser_IdAndStatus(userId, statusFilter, pageable);
 
         return PageResponse.from(page.map(EnrollmentListItemResponse::from));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ClassEnrollmentItemResponse> findClassEnrollments(
+            Long requesterId,
+            Long classId,
+            EnrollmentStatus statusFilter,
+            Pageable pageable
+    ) {
+        Class clazz = classRepository.findById(classId)
+                .orElseThrow(() -> new CustomException(ErrorCode.CLASS_NOT_FOUND));
+        if (!clazz.isOwnedBy(requesterId)) {
+            throw new CustomException(ErrorCode.CLASS_ACCESS_DENIED);
+        }
+
+        Page<Enrollment> page = (statusFilter == null)
+                ? enrollmentRepository.findByClazz_Id(classId, pageable)
+                : enrollmentRepository.findByClazz_IdAndStatus(classId, statusFilter, pageable);
+
+        return PageResponse.from(page.map(ClassEnrollmentItemResponse::from));
     }
 
     private Enrollment reserveSeatAndSave(User user, Class clazz) {
