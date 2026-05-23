@@ -6,6 +6,7 @@ import com.futureschole.courseregistration.domain.entity.User;
 import com.futureschole.courseregistration.domain.enums.ClassStatus;
 import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
+import com.futureschole.courseregistration.dto.ClassEnrollmentItemResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCancelResponse;
 import com.futureschole.courseregistration.dto.EnrollmentCreateRequest;
 import com.futureschole.courseregistration.dto.EnrollmentCreateResponse;
@@ -847,6 +848,159 @@ class EnrollmentServiceTest {
             // when
             PageResponse<EnrollmentListItemResponse> response =
                     enrollmentService.findMyEnrollments(userId, null, DEFAULT_PAGEABLE);
+
+            // then
+            assertThat(response.content()).isEmpty();
+            assertThat(response.totalElements()).isZero();
+            assertThat(response.totalPages()).isZero();
+            assertThat(response.last()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("강의별 수강생 목록 조회")
+    class FindClassEnrollments {
+
+        private static final Long CREATOR_ID = 99L;
+        private static final Pageable DEFAULT_PAGEABLE =
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "id"));
+
+        @Test
+        @DisplayName("본인 소유 강의에서 status 필터가 없으면 전체 상태의 수강 신청이 반환된다")
+        void findClassEnrollments_withoutStatusFilter_returnsAllStatuses() {
+            // given
+            Long classId = 1L;
+            Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
+
+            User userA = buildUserRef(300L);
+            User userB = buildUserRef(301L);
+            User userC = buildUserRef(302L);
+
+            Enrollment pending = buildEnrollment(500L, userA, clazz, EnrollmentStatus.PENDING);
+            Enrollment confirmed = buildEnrollment(501L, userB, clazz, EnrollmentStatus.CONFIRMED);
+            Enrollment cancelled = buildEnrollment(502L, userC, clazz, EnrollmentStatus.CANCELLED);
+
+            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(enrollmentRepository.findByClazz_Id(eq(classId), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(
+                            List.of(cancelled, confirmed, pending),
+                            DEFAULT_PAGEABLE,
+                            3
+                    ));
+
+            // when
+            PageResponse<ClassEnrollmentItemResponse> response =
+                    enrollmentService.findClassEnrollments(CREATOR_ID, classId, null, DEFAULT_PAGEABLE);
+
+            // then
+            assertThat(response.content()).hasSize(3);
+            assertThat(response.content())
+                    .extracting(ClassEnrollmentItemResponse::status)
+                    .containsExactly(
+                            EnrollmentStatus.CANCELLED,
+                            EnrollmentStatus.CONFIRMED,
+                            EnrollmentStatus.PENDING
+                    );
+            assertThat(response.content())
+                    .extracting(ClassEnrollmentItemResponse::enrollmentId, ClassEnrollmentItemResponse::userId)
+                    .containsExactly(
+                            tuple(502L, 302L),
+                            tuple(501L, 301L),
+                            tuple(500L, 300L)
+                    );
+            verify(enrollmentRepository, never())
+                    .findByClazz_IdAndStatus(anyLong(), any(EnrollmentStatus.class), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("본인 소유 강의에서 status 지정 시 동일 status/Pageable이 Repository에 그대로 전달된다")
+        void findClassEnrollments_withStatusFilter_passesArgsToRepository() {
+            // given
+            Long classId = 1L;
+            Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
+            Pageable pageable = PageRequest.of(2, 10, Sort.by(Sort.Direction.ASC, "id"));
+
+            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(enrollmentRepository.findByClazz_IdAndStatus(
+                    eq(classId), eq(EnrollmentStatus.CONFIRMED), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), pageable, 0));
+
+            // when
+            enrollmentService.findClassEnrollments(
+                    CREATOR_ID, classId, EnrollmentStatus.CONFIRMED, pageable);
+
+            // then
+            ArgumentCaptor<EnrollmentStatus> statusCaptor = ArgumentCaptor.forClass(EnrollmentStatus.class);
+            ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+            verify(enrollmentRepository).findByClazz_IdAndStatus(
+                    eq(classId), statusCaptor.capture(), pageableCaptor.capture());
+            assertThat(statusCaptor.getValue()).isEqualTo(EnrollmentStatus.CONFIRMED);
+            Pageable captured = pageableCaptor.getValue();
+            assertThat(captured.getPageNumber()).isEqualTo(2);
+            assertThat(captured.getPageSize()).isEqualTo(10);
+            assertThat(captured.getSort().getOrderFor("id"))
+                    .isNotNull()
+                    .satisfies(order -> assertThat(order.getDirection()).isEqualTo(Sort.Direction.ASC));
+            verify(enrollmentRepository, never())
+                    .findByClazz_Id(anyLong(), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 classId로 조회하면 CLASS_NOT_FOUND 예외가 발생하고 Repository 조회가 호출되지 않는다")
+        void findClassEnrollments_classNotFound() {
+            // given
+            Long classId = 999L;
+            given(classRepository.findById(classId)).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.findClassEnrollments(
+                    CREATOR_ID, classId, null, DEFAULT_PAGEABLE))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.CLASS_NOT_FOUND);
+
+            verify(enrollmentRepository, never())
+                    .findByClazz_Id(anyLong(), any(Pageable.class));
+            verify(enrollmentRepository, never())
+                    .findByClazz_IdAndStatus(anyLong(), any(EnrollmentStatus.class), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("다른 사용자가 강의 수강생 목록을 조회하면 CLASS_ACCESS_DENIED 예외가 발생하고 Repository 조회가 호출되지 않는다")
+        void findClassEnrollments_notOwner_returnsAccessDenied() {
+            // given
+            Long classId = 1L;
+            Long otherUserId = 201L;
+            Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
+            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+
+            // when & then
+            assertThatThrownBy(() -> enrollmentService.findClassEnrollments(
+                    otherUserId, classId, null, DEFAULT_PAGEABLE))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.CLASS_ACCESS_DENIED);
+
+            verify(enrollmentRepository, never())
+                    .findByClazz_Id(anyLong(), any(Pageable.class));
+            verify(enrollmentRepository, never())
+                    .findByClazz_IdAndStatus(anyLong(), any(EnrollmentStatus.class), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("수강생이 없는 강의를 조회하면 content는 빈 리스트, totalElements는 0이 된다")
+        void findClassEnrollments_emptyPage() {
+            // given
+            Long classId = 1L;
+            Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
+
+            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(enrollmentRepository.findByClazz_Id(eq(classId), any(Pageable.class)))
+                    .willReturn(new PageImpl<>(Collections.emptyList(), DEFAULT_PAGEABLE, 0));
+
+            // when
+            PageResponse<ClassEnrollmentItemResponse> response =
+                    enrollmentService.findClassEnrollments(CREATOR_ID, classId, null, DEFAULT_PAGEABLE);
 
             // then
             assertThat(response.content()).isEmpty();
