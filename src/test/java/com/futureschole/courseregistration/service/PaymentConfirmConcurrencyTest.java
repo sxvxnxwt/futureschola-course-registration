@@ -8,19 +8,13 @@ import com.futureschole.courseregistration.domain.enums.EnrollmentStatus;
 import com.futureschole.courseregistration.domain.enums.UserRole;
 import com.futureschole.courseregistration.exception.CustomException;
 import com.futureschole.courseregistration.exception.ErrorCode;
-import com.futureschole.courseregistration.repository.ClassRepository;
-import com.futureschole.courseregistration.repository.EnrollmentRepository;
-import com.futureschole.courseregistration.repository.UserRepository;
-import org.junit.jupiter.api.AfterEach;
+import com.futureschole.courseregistration.integration.IntegrationTestSupport;
+import com.futureschole.courseregistration.integration.TestFixtures;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.time.LocalDate;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,27 +23,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-class PaymentConfirmConcurrencyTest {
+class PaymentConfirmConcurrencyTest extends IntegrationTestSupport {
 
     @Autowired
     private EnrollmentService enrollmentService;
-
-    @Autowired
-    private ClassRepository classRepository;
-
-    @Autowired
-    private EnrollmentRepository enrollmentRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @AfterEach
-    void cleanUp() {
-        enrollmentRepository.deleteAllInBatch();
-        classRepository.deleteAllInBatch();
-        userRepository.deleteAllInBatch();
-    }
 
     @Nested
     @DisplayName("동시 결제 확정")
@@ -61,23 +38,23 @@ class PaymentConfirmConcurrencyTest {
             // given
             int concurrency = 10;
 
-            User creator = userRepository.save(buildUser("creator@example.com", UserRole.CREATOR));
-            User student = userRepository.save(buildUser("student@example.com", UserRole.CLASSMATE));
-
-            Class clazz = Class.create(
-                    creator,
-                    "결제 확정 동시성 테스트",
-                    "test",
-                    50_000,
-                    30,
-                    LocalDate.of(2026, 6, 1),
-                    LocalDate.of(2026, 7, 31)
+            User creator = userRepository.save(
+                    TestFixtures.user().email("creator@example.com").role(UserRole.CREATOR).build()
             );
-            setField(Class.class, clazz, "status", ClassStatus.OPEN);
-            Class savedClass = classRepository.saveAndFlush(clazz);
+            User student = userRepository.save(
+                    TestFixtures.user().email("student@example.com").build()
+            );
+            Class savedClass = classRepository.saveAndFlush(
+                    TestFixtures.classOf(creator)
+                            .title("결제 확정 동시성 테스트")
+                            .capacity(30)
+                            .status(ClassStatus.OPEN)
+                            .build()
+            );
 
-            Enrollment enrollment = Enrollment.create(student, savedClass);
-            Enrollment savedEnrollment = enrollmentRepository.saveAndFlush(enrollment);
+            Enrollment savedEnrollment = enrollmentRepository.saveAndFlush(
+                    TestFixtures.enrollment(student, savedClass).build()
+            );
             Long enrollmentId = savedEnrollment.getId();
             Long studentId = student.getId();
 
@@ -122,31 +99,6 @@ class PaymentConfirmConcurrencyTest {
             Enrollment finalEnrollment = enrollmentRepository.findById(enrollmentId).orElseThrow();
             assertThat(finalEnrollment.getStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
             assertThat(finalEnrollment.getConfirmedAt()).isNotNull();
-        }
-    }
-
-    private static User buildUser(String email, UserRole role) {
-        try {
-            Constructor<User> ctor = User.class.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            User user = ctor.newInstance();
-            setField(User.class, user, "email", email);
-            setField(User.class, user, "password", "password");
-            setField(User.class, user, "name", "name-" + email);
-            setField(User.class, user, "role", role);
-            return user;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static void setField(java.lang.Class<?> type, Object target, String name, Object value) {
-        try {
-            Field field = type.getDeclaredField(name);
-            field.setAccessible(true);
-            field.set(target, value);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
         }
     }
 }
