@@ -18,7 +18,7 @@
 | 빌드 | Gradle |
 | 데이터베이스 | MySQL 8.0 |
 | 문서화 | springdoc-openapi (Swagger UI) |
-| 테스트 | JUnit 5, AssertJ |
+| 테스트 | JUnit 5, AssertJ, Testcontainers (MySQL) |
 | 실행 환경 | Docker, Docker Compose |
 | 보조 | Lombok |
 
@@ -62,7 +62,7 @@ docker compose down -v       # 컨테이너 + 볼륨 삭제 (DB 초기화)
 - **강의 상태 전이**: `DRAFT → OPEN → CLOSED` 단방향만 허용. 역방향이나 단계 건너뛰기는 거부됩니다.
 - **DRAFT 강의 노출**: 초안 상태의 강의는 목록/상세 조회에서 노출하지 않습니다 (작성자 본인만 알 수 있는 비공개 상태로 해석).
 - **수강 신청 가능 조건**: 강의 상태가 `OPEN`이어야 하며, 동일 강의에 활성(PENDING/CONFIRMED) 신청이 있는 사용자는 중복 신청 불가.
-- **취소 가능 조건**: PENDING 또는 CONFIRMED 상태의 본인 신청만 취소 가능. 취소 가능 기간 제한은 선택 구현이라 적용하지 않았습니다.
+- **취소 가능 조건**: PENDING 또는 CONFIRMED 상태의 본인 신청만 취소 가능. CONFIRMED는 결제 후 7일 이내에만 취소 가능.
 - **시간 형식**: 모든 시각은 ISO-8601 (`LocalDateTime`). 컨테이너 타임존은 `Asia/Seoul`.
 
 ## 설계 결정과 이유
@@ -102,16 +102,32 @@ WHERE id = ? AND user_id = ? AND status = 'PENDING'
 | 검증 실패 | 400 | VALIDATION_FAILED |
 | 권한 없음 | 403 | FORBIDDEN / CLASS_ACCESS_DENIED |
 | 리소스 없음 | 404 | USER_NOT_FOUND / CLASS_NOT_FOUND / ENROLLMENT_NOT_FOUND |
-| 비즈니스 위반 | 409 | INVALID_STATUS_TRANSITION / CLASS_NOT_OPEN / CLASS_FULL / ALREADY_ENROLLED |
+| 비즈니스 위반 | 409 | INVALID_STATUS_TRANSITION / CLASS_NOT_OPEN / CLASS_FULL / ALREADY_ENROLLED / CANCEL_PERIOD_EXPIRED |
+
+## 선택 구현 항목
+
+### 1. 취소 가능 기간 제한 (결제 후 7일 이내)
+
+- 취소 시점에 신청 상태가 `CONFIRMED`이고 결제 확정 시각으로부터 7일이 지났다면 `CANCEL_PERIOD_EXPIRED`를 반환.
+- `PENDING` 상태는 결제 전이므로 기간 제한 없이 취소 가능.
+- 현재 시각은 `Clock` 빈을 통해 주입되며, 통합 테스트에서는 `@MockitoBean`으로 시점을 고정해 경계값(7일 마지막 초 / 7일 1초 초과)을 검증.
+
+### 2. 페이지네이션
+
+- Spring Data의 `Pageable`을 컨트롤러 파라미터로 받고 (`@PageableDefault(size = 20, sort = "id", direction = DESC)`) 자체 `PageResponse<T>` DTO로 직렬화.
+- 적용 엔드포인트: `GET /api/v1/classes`, `GET /api/v1/classes/{classId}/enrollments`, `GET /api/v1/enrollments/me`.
+- 쿼리 파라미터: `page`, `size`, `sort` (예: `?page=0&size=10&sort=id,desc`).
+
+### 3. 강의별 수강생 목록 조회 (크리에이터 전용)
+
+- `GET /api/v1/classes/{classId}/enrollments` — 호출자가 해당 강의의 크리에이터일 때만 200, 아니면 403 `CLASS_ACCESS_DENIED`.
+- `status` 필터(PENDING/CONFIRMED/CANCELLED) 및 페이지네이션 지원.
 
 ## 미구현 / 제약사항
 
 ### 미구현 (선택 구현 항목)
 
-- 수강 취소 가능 기간 제한 (예: 결제 후 7일 이내)
 - 대기열(waitlist) 기능
-- 강의별 수강생 목록 조회 (크리에이터 전용)
-- 신청 내역 페이지네이션
 
 ### 제약사항
 
@@ -154,8 +170,9 @@ WHERE id = ? AND user_id = ? AND status = 'PENDING'
 | --- | --- | --- |
 | POST | `/api/v1/classes` | 강의 등록 |
 | POST | `/api/v1/classes/{classId}/status` | 강의 상태 변경 |
-| GET | `/api/v1/classes?status=OPEN` | 강의 목록 (status 필터: OPEN/CLOSED) |
+| GET | `/api/v1/classes?status=OPEN` | 강의 목록 (status 필터: OPEN/CLOSED, 페이지네이션) |
 | GET | `/api/v1/classes/{classId}` | 강의 상세 (현재 신청 인원 포함) |
+| GET | `/api/v1/classes/{classId}/enrollments` | 강의별 수강생 목록 — 크리에이터 전용 (status 필터, 페이지네이션) |
 
 ### 수강 신청 (Enrollment)
 
@@ -164,7 +181,7 @@ WHERE id = ? AND user_id = ? AND status = 'PENDING'
 | POST | `/api/v1/enrollments` | 수강 신청 |
 | POST | `/api/v1/enrollments/{enrollmentId}/payment` | 결제 확정 |
 | POST | `/api/v1/enrollments/{enrollmentId}/cancel` | 수강 취소 |
-| GET | `/api/v1/enrollments/me?status=CONFIRMED` | 내 수강 신청 목록 |
+| GET | `/api/v1/enrollments/me?status=CONFIRMED` | 내 수강 신청 목록 (페이지네이션) |
 
 ### 샘플 요청/응답
 
@@ -256,11 +273,38 @@ HTTP/1.1 200 OK
 { "id": 10, "status": "CANCELLED", "cancelledAt": "2026-05-23T14:12:00" }
 ```
 
+#### 페이지 응답 예시 (강의별 수강생 목록)
+
+```http
+GET /api/v1/classes/1/enrollments?status=CONFIRMED&page=0&size=20
+X-User-Id: 1
+```
+
+```http
+HTTP/1.1 200 OK
+{
+  "content": [
+    { "enrollmentId": 10, "userId": 2, "status": "CONFIRMED",
+      "appliedAt": "2026-05-23T14:10:00", "confirmedAt": "2026-05-23T14:11:00" }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1,
+  "last": true
+}
+```
+
 #### 에러 응답 예시
 
 ```http
 HTTP/1.1 409 Conflict
 { "code": "CLASS_FULL", "message": "정원이 가득 차 신청할 수 없습니다." }
+```
+
+```http
+HTTP/1.1 409 Conflict
+{ "code": "CANCEL_PERIOD_EXPIRED", "message": "취소 가능 기간이 지났습니다." }
 ```
 
 ## 데이터 모델 설명
@@ -318,13 +362,7 @@ HTTP/1.1 409 Conflict
 
 ### 사전 준비
 
-테스트는 `application-local.yaml` 설정(`localhost:3306`)을 사용하므로 로컬 MySQL이 필요합니다.
-
-로컬에 MySQL이 설치되어 있다면 다음과 같은 DB를 준비:
-
-- host: `localhost`, port: `3306`
-- database: `course_registration`
-- user: `root`, password: `1234`
+- Docker Desktop 실행
 
 ### 실행
 
@@ -334,11 +372,23 @@ HTTP/1.1 409 Conflict
 
 ### 포함된 테스트
 
+**단위 / 슬라이스 테스트**
+
 - `ClassServiceTest`, `EnrollmentServiceTest`: 서비스 단위 테스트
 - `ClassControllerTest`: 컨트롤러 슬라이스 테스트
+
+**동시성 테스트** 
+
 - `EnrollmentConcurrencyTest`: 동시 신청에서 정원 초과가 발생하지 않는지 검증
 - `PaymentConfirmConcurrencyTest`: 동시 결제 확정 요청에서 한쪽만 성공하는지 검증
 - `CancelConcurrencyTest`: 동시 취소 요청에 대한 상태 전이 검증
+
+**통합 테스트** (Testcontainers + MockMvc)
+
+- 공통 베이스 `IntegrationTestSupport`: MySQL 컨테이너를 정적으로 1회 기동(`withReuse(true)`)하고 `@DynamicPropertySource`로 데이터소스 주입, `@MockitoBean Clock`으로 시점 고정, 각 테스트 종료 시 `deleteAllInBatch`로 정리.
+- `ClassApiIntegrationTest`: 강의 등록, 상태 전이 4종(정상/스킵/역방향), 목록 필터 + 페이지 응답 포맷, 상세 `enrolledCount`(CANCELLED 제외), 강의별 수강생 조회 권한(소유자 200 / 비소유자 403).
+- `EnrollmentApiIntegrationTest`: 신청→결제→취소 해피패스, 거부 케이스(DRAFT/CLOSED/정원초과/중복), 결제 후 7일 경계값(이내 성공 / 초과 409), 내 신청 목록 페이지네이션 및 status 필터.
+- `ExceptionContractIntegrationTest`: `GlobalExceptionHandler`의 `{ code, message }` 포맷 일관성 (Bean Validation 400, 리소스 없음 404, 도메인 예외 409, enum 타입 변환 실패 400).
 
 ## 샘플 시드 데이터
 
