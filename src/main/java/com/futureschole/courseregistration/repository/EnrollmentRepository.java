@@ -45,11 +45,12 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
                 e.cancelledAt = :cancelledAt
             WHERE e.id = :id
               AND e.user.id = :userId
-              AND e.status IN ('PENDING', 'CONFIRMED')
+              AND e.status = :expectedStatus
             """)
-    int cancelIfActive(
+    int cancelIfStatus(
             @Param("id") Long enrollmentId,
             @Param("userId") Long userId,
+            @Param("expectedStatus") EnrollmentStatus expectedStatus,
             @Param("cancelledAt") LocalDateTime cancelledAt
     );
 

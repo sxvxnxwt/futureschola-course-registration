@@ -93,7 +93,12 @@ public class EnrollmentService {
         LocalDateTime now = LocalDateTime.now(clock);
         enrollment.ensureCancellable(now);
 
-        int updated = enrollmentRepository.cancelIfActive(enrollmentId, userId, now);
+        EnrollmentStatus expectedStatus = enrollment.getStatus();
+        if (!ACTIVE_STATUSES.contains(expectedStatus)) {
+            throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        int updated = enrollmentRepository.cancelIfStatus(enrollmentId, userId, expectedStatus, now);
         if (updated == 0) {
             throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
         }
