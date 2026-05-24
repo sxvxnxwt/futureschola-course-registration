@@ -1,6 +1,8 @@
 package com.futureschole.courseregistration.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.futureschole.courseregistration.repository.ClassRepository;
 import com.futureschole.courseregistration.repository.EnrollmentRepository;
 import com.futureschole.courseregistration.repository.UserRepository;
@@ -49,8 +51,9 @@ public abstract class IntegrationTestSupport {
     @Autowired
     protected MockMvc mockMvc;
 
-    @Autowired
-    protected ObjectMapper objectMapper;
+    protected final ObjectMapper objectMapper = JsonMapper.builder()
+            .addModule(new JavaTimeModule())
+            .build();
 
     @Autowired
     protected UserRepository userRepository;
