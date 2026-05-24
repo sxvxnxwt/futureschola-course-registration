@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +37,10 @@ class CancelConcurrencyTest extends IntegrationTestSupport {
         @DisplayName("같은 enrollmentId에 confirm/cancel을 동시에 호출하면 정확히 한 쪽만 성공하고 최종 status는 CONFIRMED 또는 CANCELLED 중 하나가 된다")
         void concurrent_confirm_and_cancel_only_one_succeeds() throws InterruptedException {
             // given
+            // ensureCancellable(now) 7일 체크가 mocked clock과 real wall-clock 불일치로
+            // spurious 만료로 떨어지지 않도록 clock을 현재 시각에 정렬.
+            applyFixedClock(Instant.now());
+
             EnrollmentFixture fixture = seedPendingEnrollment("confirm-vs-cancel");
             Long enrollmentId = fixture.enrollmentId();
             Long studentId = fixture.studentId();

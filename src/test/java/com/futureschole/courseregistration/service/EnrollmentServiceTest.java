@@ -428,7 +428,7 @@ class EnrollmentServiceTest {
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(pending))
                     .willReturn(Optional.of(cancelled));
-            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+            given(enrollmentRepository.cancelIfStatus(eq(enrollmentId), eq(userId), eq(EnrollmentStatus.PENDING), any(LocalDateTime.class)))
                     .willReturn(1);
 
             // when
@@ -463,7 +463,7 @@ class EnrollmentServiceTest {
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(confirmed))
                     .willReturn(Optional.of(cancelled));
-            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+            given(enrollmentRepository.cancelIfStatus(eq(enrollmentId), eq(userId), eq(EnrollmentStatus.CONFIRMED), any(LocalDateTime.class)))
                     .willReturn(1);
 
             // when
@@ -477,7 +477,7 @@ class EnrollmentServiceTest {
         }
 
         @Test
-        @DisplayName("이미 CANCELLED 상태인 enrollment를 다시 취소하면 INVALID_STATUS_TRANSITION 예외가 발생한다")
+        @DisplayName("이미 CANCELLED 상태인 enrollment를 다시 취소하면 INVALID_STATUS_TRANSITION 예외가 발생하고 UPDATE는 호출되지 않는다")
         void cancel_alreadyCancelled_returnsInvalidStatusTransition() {
             // given
             Long userId = 200L;
@@ -490,14 +490,15 @@ class EnrollmentServiceTest {
             Enrollment enrollment = buildEnrollment(enrollmentId, user, clazz, EnrollmentStatus.CANCELLED);
 
             given(enrollmentRepository.findById(enrollmentId)).willReturn(Optional.of(enrollment));
-            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
-                    .willReturn(0);
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.cancel(userId, enrollmentId))
                     .isInstanceOf(CustomException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+            verify(enrollmentRepository, never())
+                    .cancelIfStatus(anyLong(), anyLong(), any(EnrollmentStatus.class), any(LocalDateTime.class));
         }
 
         @Test
@@ -520,7 +521,7 @@ class EnrollmentServiceTest {
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(pending))
                     .willReturn(Optional.of(cancelled));
-            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+            given(enrollmentRepository.cancelIfStatus(eq(enrollmentId), eq(userId), eq(EnrollmentStatus.PENDING), any(LocalDateTime.class)))
                     .willReturn(1);
 
             // when
@@ -554,7 +555,7 @@ class EnrollmentServiceTest {
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(confirmed))
                     .willReturn(Optional.of(cancelled));
-            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+            given(enrollmentRepository.cancelIfStatus(eq(enrollmentId), eq(userId), eq(EnrollmentStatus.CONFIRMED), any(LocalDateTime.class)))
                     .willReturn(1);
 
             // when
@@ -565,7 +566,7 @@ class EnrollmentServiceTest {
         }
 
         @Test
-        @DisplayName("CONFIRMED 상태에서 confirmedAt이 now-7일1초이면 CANCEL_PERIOD_EXPIRED 예외가 발생하고 cancelIfActive는 호출되지 않는다")
+        @DisplayName("CONFIRMED 상태에서 confirmedAt이 now-7일1초이면 CANCEL_PERIOD_EXPIRED 예외가 발생하고 cancelIfStatus는 호출되지 않는다")
         void cancel_confirmedExpired_returnsCancelPeriodExpired() {
             // given
             Long userId = 200L;
@@ -589,7 +590,7 @@ class EnrollmentServiceTest {
                     .isEqualTo(ErrorCode.CANCEL_PERIOD_EXPIRED);
 
             verify(enrollmentRepository, never())
-                    .cancelIfActive(anyLong(), anyLong(), any(LocalDateTime.class));
+                    .cancelIfStatus(anyLong(), anyLong(), any(EnrollmentStatus.class), any(LocalDateTime.class));
         }
 
         @Test
@@ -615,7 +616,7 @@ class EnrollmentServiceTest {
             given(enrollmentRepository.findById(enrollmentId))
                     .willReturn(Optional.of(confirmed))
                     .willReturn(Optional.of(cancelled));
-            given(enrollmentRepository.cancelIfActive(eq(enrollmentId), eq(userId), any(LocalDateTime.class)))
+            given(enrollmentRepository.cancelIfStatus(eq(enrollmentId), eq(userId), eq(EnrollmentStatus.CONFIRMED), any(LocalDateTime.class)))
                     .willReturn(1);
 
             // when
@@ -639,7 +640,7 @@ class EnrollmentServiceTest {
                     .isEqualTo(ErrorCode.ENROLLMENT_NOT_FOUND);
 
             verify(enrollmentRepository, never())
-                    .cancelIfActive(anyLong(), anyLong(), any(LocalDateTime.class));
+                    .cancelIfStatus(anyLong(), anyLong(), any(EnrollmentStatus.class), any(LocalDateTime.class));
         }
 
         @Test
@@ -664,7 +665,7 @@ class EnrollmentServiceTest {
             assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
             assertThat(enrollment.getCancelledAt()).isNull();
             verify(enrollmentRepository, never())
-                    .cancelIfActive(anyLong(), anyLong(), any(LocalDateTime.class));
+                    .cancelIfStatus(anyLong(), anyLong(), any(EnrollmentStatus.class), any(LocalDateTime.class));
         }
     }
 
