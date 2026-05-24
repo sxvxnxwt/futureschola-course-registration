@@ -2,6 +2,7 @@ package com.futureschole.courseregistration.controller;
 
 import com.futureschole.courseregistration.exception.GlobalExceptionHandler;
 import com.futureschole.courseregistration.service.ClassService;
+import com.futureschole.courseregistration.service.EnrollmentService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,9 @@ class ClassControllerTest {
 
     @MockitoBean
     private ClassService classService;
+
+    @MockitoBean
+    private EnrollmentService enrollmentService;
 
     @Test
     @DisplayName("status=DRAFT 요청 시 400 VALIDATION_FAILED 응답을 반환한다")
