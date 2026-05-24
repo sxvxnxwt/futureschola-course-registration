@@ -62,4 +62,12 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
             EnrollmentStatus status,
             Pageable pageable
     );
+
+    Page<Enrollment> findByClazz_Id(Long classId, Pageable pageable);
+
+    Page<Enrollment> findByClazz_IdAndStatus(
+            Long classId,
+            EnrollmentStatus status,
+            Pageable pageable
+    );
 }

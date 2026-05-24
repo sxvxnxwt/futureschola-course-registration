@@ -10,6 +10,7 @@ import com.futureschole.courseregistration.dto.PaymentConfirmResponse;
 import com.futureschole.courseregistration.service.EnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -53,7 +54,7 @@ public class EnrollmentController {
     public ResponseEntity<PageResponse<EnrollmentListItemResponse>> findMyEnrollments(
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) EnrollmentStatus status,
-            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
+            @ParameterObject @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ResponseEntity.ok(enrollmentService.findMyEnrollments(userId, status, pageable));
     }
