@@ -24,41 +24,65 @@
 
 ## 실행 방법
 
-### 사전 준비
+Docker Desktop 실행 후, 빈 작업 폴더에서 아래 시퀀스를 따르면 됩니다.
 
-- Docker Desktop 설치 및 실행
-
-### 실행
-
-프로젝트 루트에서:
+### 1) 클론 & 앱 기동
 
 ```bash
+git clone https://github.com/sxvxnxwt/futureschole-course-registration.git
+cd futureschole-course-registration
 docker compose up --build
 ```
 
-### 접속 정보
+로그에 `Started CourseregistrationApplication` 이 출력되면 기동 완료. 이후 단계는 **새 터미널**에서 진행 (위 창은 로그용으로 유지).
 
-- API Base URL: `http://localhost:8080`
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- OpenAPI Docs (JSON): `http://localhost:8080/api-docs`
+### 2) 시드 데이터 주입
 
-### 종료
+회원가입 API가 없으므로 사용자 행을 직접 삽입합니다.
 
 ```bash
-docker compose down          # 컨테이너만 정리 (데이터 유지)
-docker compose down -v       # 컨테이너 + 볼륨 삭제 (DB 초기화)
+docker exec -i course-registration-mysql mysql -uroot -p1234 course_registration <<'SQL'
+INSERT INTO users (email, password, name, role, created_at, updated_at) VALUES
+  ('creator@example.com', 'test', '강사1',   'CREATOR',   NOW(), NOW()),
+  ('mate1@example.com',   'test', '수강생1', 'CLASSMATE', NOW(), NOW()),
+  ('mate2@example.com',   'test', '수강생2', 'CLASSMATE', NOW(), NOW());
+SQL
 ```
 
-### 포트 안내
+이후 `X-User-Id: 1` (강사) / `2`, `3` (수강생)으로 API를 호출할 수 있습니다.
+
+### 3) API 확인
+
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- API Base URL: `http://localhost:8080`
+- OpenAPI Docs (JSON): `http://localhost:8080/api-docs`
+
+### 4) 테스트 실행
+
+프로젝트 루트에서 (JDK 21 필요, Docker Desktop은 켜둔 채):
+
+```bash
+./gradlew test
+```
+
+> Windows PowerShell은 `.\gradlew test`
+
+### 5) 종료
+
+```bash
+docker compose down       # 컨테이너만 정리 (DB 데이터 유지)
+docker compose down -v    # 컨테이너 + 볼륨 삭제 (DB 초기화)
+```
+
+### 포트
 
 - 앱: `8080`
-- MySQL: 호스트 `3307` → 컨테이너 `3306`. 
-- 호스트에서 DB 접속 시: `localhost:3307`, user `root`, password `1234`
+- MySQL: 호스트 `3307` → 컨테이너 `3306` (호스트 접속 시 `localhost:3307`, root/1234)
 
 ## 요구사항 해석 및 가정
 
 - **인증**: Spring Security는 사용하지 않으며, `X-User-Id` 헤더로 사용자를 식별합니다. 회원가입/로그인 API는 범위 밖으로 보고 구현하지 않았습니다.
-- **사용자 데이터**: 회원가입 API가 없으므로, API를 호출하려면 DB에 사용자 행을 직접 INSERT해야 합니다 (아래 [샘플 시드 데이터](#샘플-시드-데이터) 참고).
+- **사용자 데이터**: 회원가입 API가 없으므로, API를 호출하려면 DB에 사용자 행을 직접 INSERT해야 합니다.
 - **강의 상태 전이**: `DRAFT → OPEN → CLOSED` 단방향만 허용. 역방향이나 단계 건너뛰기는 거부됩니다.
 - **DRAFT 강의 노출**: 초안 상태의 강의는 목록/상세 조회에서 노출하지 않습니다 (작성자 본인만 알 수 있는 비공개 상태로 해석).
 - **수강 신청 가능 조건**: 강의 상태가 `OPEN`이어야 하며, 동일 강의에 활성(PENDING/CONFIRMED) 신청이 있는 사용자는 중복 신청 불가.
@@ -92,17 +116,6 @@ WHERE id = ? AND user_id = ? AND status = 'PENDING'
 
 - 애플리케이션 레벨: `existsByUser_IdAndClazz_IdAndStatusIn` 사전 체크
 - 데이터베이스 레벨: `enrollment` 테이블에 `(user_id, class_id)` UniqueConstraint
-
-### 4. 에러 응답 통일
-
-`GlobalExceptionHandler`에서 모든 예외를 `{ code, message }` 포맷으로 변환합니다. HTTP 상태 코드/도메인 코드/메시지는 `ErrorCode` enum에서 한곳에 관리.
-
-| 케이스 | HTTP | code |
-| --- | --- | --- |
-| 검증 실패 | 400 | VALIDATION_FAILED |
-| 권한 없음 | 403 | FORBIDDEN / CLASS_ACCESS_DENIED |
-| 리소스 없음 | 404 | USER_NOT_FOUND / CLASS_NOT_FOUND / ENROLLMENT_NOT_FOUND |
-| 비즈니스 위반 | 409 | INVALID_STATUS_TRANSITION / CLASS_NOT_OPEN / CLASS_FULL / ALREADY_ENROLLED / CANCEL_PERIOD_EXPIRED |
 
 ## 선택 구현 항목
 
@@ -358,19 +371,7 @@ HTTP/1.1 409 Conflict
 | cancelled_at | datetime | 취소 시각 |
 | created_at, updated_at | datetime | JPA Auditing |
 
-## 테스트 실행 방법
-
-### 사전 준비
-
-- Docker Desktop 실행
-
-### 실행
-
-```bash
-./gradlew test
-```
-
-### 포함된 테스트
+## 포함된 테스트
 
 **단위 / 슬라이스 테스트**
 
@@ -389,20 +390,3 @@ HTTP/1.1 409 Conflict
 - `ClassApiIntegrationTest`: 강의 등록, 상태 전이 4종(정상/스킵/역방향), 목록 필터 + 페이지 응답 포맷, 상세 `enrolledCount`(CANCELLED 제외), 강의별 수강생 조회 권한(소유자 200 / 비소유자 403).
 - `EnrollmentApiIntegrationTest`: 신청→결제→취소 해피패스, 거부 케이스(DRAFT/CLOSED/정원초과/중복), 결제 후 7일 경계값(이내 성공 / 초과 409), 내 신청 목록 페이지네이션 및 status 필터.
 - `ExceptionContractIntegrationTest`: `GlobalExceptionHandler`의 `{ code, message }` 포맷 일관성 (Bean Validation 400, 리소스 없음 404, 도메인 예외 409, enum 타입 변환 실패 400).
-
-## 샘플 시드 데이터
-
-API 호출 전에 사용자를 DB에 직접 추가합니다.
-
-```sql
--- 도커로 띄운 MySQL에 접속: localhost:3307, root / 1234
-USE course_registration;
-
-INSERT INTO users (email, password, name, role, created_at, updated_at)
-VALUES
-  ('creator@example.com', 'test',  '강사1',   'CREATOR',   NOW(), NOW()),
-  ('mate1@example.com',   'test',  '수강생1', 'CLASSMATE', NOW(), NOW()),
-  ('mate2@example.com',   'test',  '수강생2', 'CLASSMATE', NOW(), NOW());
-```
-
-이후 `X-User-Id: 1` (강사) / `X-User-Id: 2,3` (수강생)으로 API를 호출할 수 있습니다.
