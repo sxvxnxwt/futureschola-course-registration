@@ -147,7 +147,7 @@ class EnrollmentServiceTest {
             Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
             User userRef = buildUserRef(userId);
 
-            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.of(clazz));
             given(enrollmentRepository.existsByUser_IdAndClazz_IdAndStatusIn(userId, classId, ACTIVE_STATUSES))
                     .willReturn(false);
             given(enrollmentRepository.countByClazz_IdAndStatusIn(classId, ACTIVE_STATUSES))
@@ -177,7 +177,7 @@ class EnrollmentServiceTest {
         void enroll_classNotFound() {
             // given
             Long classId = 99L;
-            given(classRepository.findById(classId)).willReturn(Optional.empty());
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.empty());
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.enroll(200L, new EnrollmentCreateRequest(classId)))
@@ -194,7 +194,7 @@ class EnrollmentServiceTest {
             // given
             Long classId = 1L;
             Class clazz = buildClass(classId, ClassStatus.DRAFT, 30);
-            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.of(clazz));
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.enroll(200L, new EnrollmentCreateRequest(classId)))
@@ -211,7 +211,7 @@ class EnrollmentServiceTest {
             // given
             Long classId = 1L;
             Class clazz = buildClass(classId, ClassStatus.CLOSED, 30);
-            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.of(clazz));
 
             // when & then
             assertThatThrownBy(() -> enrollmentService.enroll(200L, new EnrollmentCreateRequest(classId)))
@@ -230,7 +230,7 @@ class EnrollmentServiceTest {
             Long classId = 1L;
             Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
 
-            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.of(clazz));
             given(enrollmentRepository.existsByUser_IdAndClazz_IdAndStatusIn(userId, classId, ACTIVE_STATUSES))
                     .willReturn(false);
             given(enrollmentRepository.countByClazz_IdAndStatusIn(classId, ACTIVE_STATUSES))
@@ -253,7 +253,7 @@ class EnrollmentServiceTest {
             Long classId = 1L;
             Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
 
-            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.of(clazz));
             given(enrollmentRepository.existsByUser_IdAndClazz_IdAndStatusIn(userId, classId, ACTIVE_STATUSES))
                     .willReturn(true);
 
@@ -275,7 +275,7 @@ class EnrollmentServiceTest {
             Long classId = 1L;
             Class clazz = buildClass(classId, ClassStatus.OPEN, 30);
 
-            given(classRepository.findById(classId)).willReturn(Optional.of(clazz));
+            given(classRepository.findByIdForUpdate(classId)).willReturn(Optional.of(clazz));
             given(enrollmentRepository.existsByUser_IdAndClazz_IdAndStatusIn(userId, classId, ACTIVE_STATUSES))
                     .willReturn(true);
 
