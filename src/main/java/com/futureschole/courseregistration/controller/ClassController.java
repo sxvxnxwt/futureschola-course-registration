@@ -14,6 +14,7 @@ import com.futureschole.courseregistration.service.ClassService;
 import com.futureschole.courseregistration.service.EnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -58,7 +59,7 @@ public class ClassController {
     @GetMapping
     public ResponseEntity<PageResponse<ClassListItemResponse>> getClasses(
             @RequestParam(required = false) ClassListStatusFilter status,
-            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
+            @ParameterObject @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ResponseEntity.ok(classService.getClasses(status, pageable));
     }
@@ -75,7 +76,7 @@ public class ClassController {
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable Long classId,
             @RequestParam(required = false) EnrollmentStatus status,
-            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
+            @ParameterObject @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ResponseEntity.ok(
                 enrollmentService.findClassEnrollments(userId, classId, status, pageable)
