@@ -40,3 +40,22 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+}
+tasks.withType(Test).configureEach {
+	systemProperty 'file.encoding', 'UTF-8'
+	systemProperty 'stdout.encoding', 'UTF-8'
+	systemProperty 'stderr.encoding', 'UTF-8'
+	maxHeapSize = '2g'
+	maxParallelForks = 1
+	forkEvery = 0L
+	testLogging {
+		events 'started', 'passed', 'skipped', 'failed'
+		exceptionFormat = 'full'
+		showStandardStreams = true
+		showExceptions = true
+		showCauses = true
+	}
+}
